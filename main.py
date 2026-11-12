@@ -123,6 +123,9 @@ async def amain():
     else:
         raise SystemExit("could not connect to the database")
     state = AppState()
+    import hub_client
+    state.hub = hub_client.Hub(state, DATA_DIR)
+    asyncio.create_task(state.hub.run())
     from web import Panel
     panel = Panel(state)
     await panel.start()

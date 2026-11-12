@@ -623,6 +623,72 @@ const links=[...document.querySelectorAll('.toc a')];if(links.length){{const obs
         await core.log(p.bot, p.gid, core.emb("🛡️ Staff access changed (web)", f"by <@{m.id}>", core.GOLD))
         return web.json_response({"ok": True, "warnings": sorted(set(msgs))})
 
+    # ───────── updates & feature requests (OpsLab Bot Hub) ─────────
+    import hub_client
+
+    def _hub():
+        return getattr(p.state, "hub", None)
+
+    async def updates_get(request):
+        await p.session(request, perm="setup")
+        h = _hub()
+        return web.json_response({
+            "version": hub_client.version(), "latest": h.latest if h else None, "update_available": bool(h and h.update_available),
+            "status": h.update_status() if h else None, "queued": bool(h and os.path.exists(h.req_file)),
+            "prefs": {k: v for k, v in (h.prefs if h else {}).items() if k in ("auto", "allow_remote")},
+            "hub": {"url": hub_client.HUB_URL, "connected": bool(h and h.last_ok), "error": h.last_error if h else None,
+                    "last_ok": _iso(h.last_ok) if h and h.last_ok else None},
+            "updater": os.path.exists("/app/data/.updater") or os.path.exists(os.path.join(data_dir, ".updater"))})
+
+    async def updates_post(request):
+        m, adm, c = await p.session(request, perm="setup")
+        h = _hub()
+        if not h:
+            raise EconError("Update service isn't running.")
+        b = await p.body(request)
+        a = b.get("action")
+        if a == "check":
+            try:
+                await h.heartbeat()
+            except Exception as e:
+                raise EconError(f"Couldn't reach the update server: {e}")
+            return web.json_response({"ok": True})
+        if a == "update":
+            lat = h.latest or {}
+            r = h.request_update(lat.get("ref") or "main", lat.get("version"), f"{m} (panel)")
+            await core.log(p.bot, p.gid, core.emb("⬆️ Update requested (web)", f"to v{lat.get('version', 'latest')} by <@{m.id}>", core.GOLD))
+            return web.json_response(r)
+        if a == "prefs":
+            h.prefs.update({"auto": bool(b.get("auto")), "allow_remote": bool(b.get("allow_remote"))})
+            p.state.save()
+            h.poke()
+            return web.json_response({"ok": True})
+        raise EconError("unknown action")
+
+    async def fr_list(request):
+        await p.session(request, perm="*")
+        h = _hub()
+        try:
+            await h.ensure_registered()
+            return web.json_response(await h.call("GET", "/api/v1/requests"))
+        except Exception as e:
+            raise EconError(f"Couldn't reach the developer hub: {e}")
+
+    async def fr_create(request):
+        m, adm, c = await p.session(request, perm="*")
+        b = await p.body(request)
+        h = _hub()
+        await h.ensure_registered()
+        res = await h.call("POST", "/api/v1/requests", {"title": b.get("title"), "body": b.get("body"), "category": b.get("category"),
+                                                       "author_id": str(m.id), "author_name": str(m)})
+        return web.json_response(res)
+
+    async def fr_comment(request):
+        m, adm, c = await p.session(request, perm="*")
+        b = await p.body(request)
+        res = await _hub().call("POST", f"/api/v1/requests/{int(request.match_info['id'])}/comment", {"body": b.get("body"), "author": str(m)})
+        return web.json_response(res)
+
     # ───────── routes ─────────
     r.add_get("/brand/logo", logo)
     r.add_get("/api/brand", brand_api)
@@ -642,6 +708,11 @@ const links=[...document.querySelectorAll('.toc a')];if(links.length){{const obs
     r.add_post("/api/guild-setup", guild_setup_save)
     r.add_post("/api/guild-setup/autocreate", guild_autocreate)
     r.add_get("/api/guild-meta", guild_meta)
+    r.add_get("/api/updates", updates_get)
+    r.add_post("/api/updates", updates_post)
+    r.add_get("/api/feature-requests", fr_list)
+    r.add_post("/api/feature-requests", fr_create)
+    r.add_post("/api/feature-requests/{id:\\d+}/comment", fr_comment)
     r.add_get("/api/staff", staff_get)
     r.add_post("/api/staff", staff_save)
     r.add_get("/api/apply", forms_public)

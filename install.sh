@@ -51,6 +51,8 @@ if [ -n "$BK" ] && [ ! -f data/.restored ]; then
 fi
 
 grep -q '^PUBLIC_URL=' .env || echo "PUBLIC_URL=" >> .env
+chmod +x "$DIR/updater.sh"
+echo "* * * * * root $DIR/updater.sh $DIR >> /var/log/csrp-bot-updater.log 2>&1" > /etc/cron.d/csrp-bot-updater
 say "Starting (first build takes a minute)"
 docker compose up -d --build
 

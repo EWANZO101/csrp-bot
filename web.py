@@ -710,11 +710,13 @@ fetch('/api/oauth',{method:'POST',headers:{'Content-Type':'application/json','X-
     # ───────── SnailyCAD ─────────
     def _cad_merged(self, b: dict) -> dict:
         cur = dict(self.state.settings.get("cad") or {})
-        for k in ("host", "port", "user", "database", "url", "dept_id"):
+        for k in ("host", "port", "user", "database", "url", "dept_id", "api_url", "mode"):
             if k in b:
                 cur[k] = str(b[k] or "").strip()
         if b.get("password"):
             cur["password"] = b["password"]
+        if b.get("api_token"):
+            cur["api_token"] = b["api_token"].strip()
         for k in ("enabled", "sync_tickets", "mark_paid"):
             if k in b:
                 cur[k] = bool(b[k])
@@ -724,6 +726,8 @@ fetch('/api/oauth',{method:'POST',headers:{'Content-Type':'application/json','X-
         await self.session(request, perm="setup")
         s = dict(self.state.settings.get("cad") or {})
         has_pw = bool(s.pop("password", None))
+        s["has_token"] = bool(s.pop("api_token", None))
+        s.setdefault("mode", "api")
         cog = self.bot.get_cog("CAD") if self.bot else None
         return web.json_response({**s, "has_password": has_pw, "last_error": cog.last_error if cog else None,
                                   "last_sync": _iso(cog.last_sync) if cog and cog.last_sync else None})
@@ -733,6 +737,8 @@ fetch('/api/oauth',{method:'POST',headers:{'Content-Type':'application/json','X-
         from cogs.cad import test_connection
         try:
             return web.json_response({"ok": True, **await test_connection(self._cad_merged(await self.body(request)))})
+        except EconError:
+            raise
         except Exception as e:
             raise EconError(f"Couldn't connect: {e}")
 

@@ -59,6 +59,9 @@ const I = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
  sliders:'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>', send:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>', menu:'<path d="M3 6h18M3 12h18M3 18h18"/>', ext:'<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+ wand:'<path d="m15 4 5 5L9 20H4v-5zM13 6l5 5M18 2v3M21 5h-3"/>',
+ bulb:'<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>',
+ up:'<path d="M12 19V5M5 12l7-7 7 7"/>',
  coins:'<circle cx="8" cy="8" r="6"/><path d="M18.1 10.4A6 6 0 1 1 10.4 18.1M7 6h1v4M16.7 13.9l.7.7-2.8 2.8"/>',
 })[n]||""}</svg>`;
 
@@ -154,13 +157,14 @@ function navItems(){
     if(f.applications&&can("applications")) out.push(["applications","Applications","form",c.applications]);
     if(f.documents&&can("documents")) out.push(["docbuilder","Document builder","book"]);
     if(can("setup")||can("staff")) out.push(["h","Configure"]);
-    if(can("setup")) { out.push(["setup","Server setup","sliders"]); out.push(["settings","Settings","cog"]); }
+    if(can("setup")) { out.push(["wizard","Setup wizard","wand"]); out.push(["setup","Server setup","sliders"]); out.push(["settings","Settings","cog"]); }
     if(can("staff")) out.push(["staff","Staff access","shield"]);
+    out.push(["h","Developer"]); out.push(["requests","Feature requests","bulb"]);
   }
   return out;
 }
 const PAGES = {me:()=>pMe(), docs:()=>pDocs(), apply:()=>pApply(), overview:()=>pOverview(), users:()=>pUsers(), orgs:()=>pOrgs(), citations:()=>pCitations(), ledger:()=>pLedger(),
-  tickets:()=>pTickets(), applications:()=>pApplications(), docbuilder:()=>pDocBuilder(), setup:()=>pSetup(), settings:()=>pSettings(), staff:()=>pStaff()};
+  tickets:()=>pTickets(), applications:()=>pApplications(), docbuilder:()=>pDocBuilder(), setup:()=>pSetup(), settings:()=>pSettings(), staff:()=>pStaff(), requests:()=>pRequests(), wizard:()=>startWizard()};
 function shell(){
   const items = navItems();
   if(!PAGE || !items.some(i=>i[0]===PAGE)) PAGE = (items.find(i=>i[0]!=="h")||["docs"])[0];
@@ -522,7 +526,7 @@ async function pSetup(){
   const missing = ["docs_channel","ticket_panel_channel","apps_channel","log_channel"].filter(k=>!c[k]).length;
   const quick = missing ? `<div class="card" style="border-color:rgba(var(--brand-rgb),.5);margin-bottom:16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap"><div style="font-size:30px">⚡</div><div style="flex:1;min-width:240px"><b>Quick setup</b><div class="mute">Create a category with <b>#documents</b>, <b>#support</b>, <b>#applications</b>, private <b>#bot-logs</b> & <b>#ticket-transcripts</b>, a <b>Tickets</b> category and a <b>“Read the documents”</b> role — then post all the panels. Anything you've already picked is kept.</div></div><button class="btn" id="qbtn" onclick="autoCreate()">Create channels for me</button></div>` : "";
   const warn = (g.role_problems||[]).length || g.bot_top_role<=1 ? `<div class="card" style="border-color:rgba(251,191,36,.5);margin-bottom:16px">⚠️ <b>Move the bot's role up.</b> In Discord → Server Settings → Roles, drag <b>${esc(ME.guild.name?"the bot's role":"the bot role")}</b> above every role it should give out${(g.role_problems||[]).length?` (it's currently below: ${g.role_problems.map(esc).join(", ")})`:""} — otherwise it can't hand out the documents, application or item roles.</div>` : "";
-  $("#main").innerHTML = head("Server setup","Features, channels, roles and branding — everything the bot posts in Discord.") + welcome + quick + warn + `
+  $("#main").innerHTML = head("Server setup","Features, channels, roles and branding — everything the bot posts in Discord.", `<button class="btn ghost" onclick="startWizard()">🧭 Run setup wizard</button>`) + welcome + quick + warn + `
   <div class="card"><div class="card-h"><h3>Features</h3><span class="dim" style="font-size:12px">Click to switch on/off · changing features restarts the bot</span></div>
    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">${Object.entries(g.feature_info).map(([k,v])=>`<div class="feat ${f[k]?"on":""}" data-f="${k}" onclick="this.classList.toggle('on')"><div class="t"><b>${esc(v.name)}</b><small>${esc(v.cmds)}</small></div><div class="switch"></div></div>`).join("")}</div></div>
   <div class="cols" style="margin-top:16px">
@@ -571,6 +575,28 @@ async function saveSetup(){
   toast(r.restarting?"Saved — bot is restarting with the new features…":errs.length?`Saved, but: ${errs.map(e=>e.join(": ")).join("; ")}`:"Saved — Discord panels updated", !errs.length);
   if(r.restarting) setTimeout(()=>location.reload(), 7000);
 }
+
+/* ───────────────────────── feature requests ───────────────────────── */
+const RQS={new:["Sent","brand"],planned:["Planned","purple"],in_progress:["In progress","gold"],done:["Done","green"],declined:["Declined","red"]};
+let FRS=[];
+async function pRequests(){
+  $("#main").innerHTML = head("Feature requests","Ask the developer for new features or report a problem. Replies show up here.",`<button class="btn" onclick="frNew()">+ New request</button>`)+`<div id="frl">${empty("⏳","Loading…")}</div>`;
+  try{ FRS=await api("/api/feature-requests"); }catch(e){ $("#frl").innerHTML=`<div class="card">${empty("📡",esc(e.message))}</div>`; return; }
+  $("#frl").innerHTML = FRS.length ? FRS.map(r=>`<div class="card" style="cursor:pointer" onclick="frOpen(${r.id})"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="flex:1;min-width:200px">${esc(r.title)}</b>
+     <span class="pill ${RQS[r.status]?.[1]||""}">${RQS[r.status]?.[0]||esc(r.status)}</span>${r.release_version?`<span class="pill green">in v${esc(r.release_version)}</span>`:""}</div>
+     <div class="dim" style="font-size:12.5px;margin-top:6px">${esc(r.category||"")} · ${esc(r.author_name||"")} · ${ago(r.created_at)}${r.comments.length?` · 💬 ${r.comments.length}`:""}${r.comments.some(c=>c.is_dev)?' · <span class="pos">developer replied</span>':""}</div></div>`).join("")
+   : `<div class="card">${empty("💡","No requests yet — tell the developer what would make your server better.")}</div>`;
+}
+function frNew(){ openModal(`<h2>New request</h2><label class="l">Type</label><select class="in" id="fc"><option value="feature">💡 New feature</option><option value="improvement">✨ Improvement</option><option value="bug">🐞 Something's broken</option></select>
+  <label class="l">Title</label><input class="in" id="ft" placeholder="e.g. Let tickets have priorities"><label class="l">Details</label><textarea class="in" id="fb" rows="6" placeholder="What should it do? Why would it help your server?"></textarea>
+  <div style="text-align:right;margin-top:16px"><button class="btn" onclick="frSend()">Send to developer</button></div>`); }
+async function frSend(){ if(await act(()=>api("/api/feature-requests",{title:$("#ft").value,body:$("#fb").value,category:$("#fc").value}),"Sent — you'll see replies here")){ closeModal(); pRequests(); } }
+function frOpen(id){ const r=FRS.find(x=>x.id===id);
+  openModal(`<div class="dim" style="font-size:12.5px">${esc(r.category)} · ${esc(r.author_name||"")} · ${ago(r.created_at)}</div><h2 style="margin:6px 0 10px">${esc(r.title)} <span class="pill ${RQS[r.status]?.[1]||""}">${RQS[r.status]?.[0]||""}</span></h2>
+   <div class="card" style="white-space:pre-wrap">${esc(r.body||"(no details)")}</div>
+   ${r.comments.map(c=>`<div class="card" style="${c.is_dev?"border-color:rgba(var(--brand-rgb),.5);background:rgba(var(--brand-rgb),.08)":""}"><div class="dim" style="font-size:12px;margin-bottom:4px">${c.is_dev?"🛠️ Developer":esc(c.author)} · ${ago(c.created_at)}</div><div style="white-space:pre-wrap">${esc(c.body)}</div></div>`).join("")}
+   <label class="l">Add a comment</label><textarea class="in" id="fcm" rows="3"></textarea><div style="text-align:right;margin-top:12px"><button class="btn" onclick="frComment(${id})">Send</button></div>`); }
+async function frComment(id){ if(await act(()=>api(`/api/feature-requests/${id}/comment`,{body:$("#fcm").value}),"Sent")){ await pRequests(); frOpen(id); } }
 
 /* ───────────────────────── staff access ───────────────────────── */
 let STAFF=null;
@@ -633,31 +659,171 @@ const SET_HELP={currency:"Currency symbol",start_balance:"Starting balance for n
 async function pSettings(){
   const d=await api("/api/settings"), s=d.settings;
   const dp=opt(d.depts.map(x=>({id:x.id,label:x.name})),s.treasury_dept,"— none (money destroyed) —");
-  $("#main").innerHTML = head("Settings","Bot connection, economy rules and integrations.") + botCard({...d.bot}) + `
+  $("#main").innerHTML = head("Settings","Bot connection, updates, economy rules and integrations.") + botCard({...d.bot}) + `<div id="updcard"></div>` + `
   <div class="card"><div class="card-h"><h3>Economy</h3></div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">${Object.entries(SET_HELP).map(([k,v])=>`<div><label class="l">${v}</label><input class="in" data-s="${k}" value="${esc(s[k])}"></div>`).join("")}
    <div><label class="l">Treasury department (taxes, fees, fines)</label><select class="in" data-s="treasury_dept">${dp}</select></div></div>
    <label class="chk"><input type="checkbox" data-s="dm_receipts" ${s.dm_receipts?"checked":""}><span>DM players receipts and notices</span></label>
    <div style="text-align:right"><button class="btn" onclick="saveSettings()">Save economy settings</button></div></div><div id="cadcard"></div>`;
   if(ME.features.cad) cadCard(d);
+  updCard();
 }
+let UPD=null, updPoll=null;
+async function updCard(){
+  const el=$("#updcard"); if(!el) return clearInterval(updPoll);
+  const u=UPD=await api("/api/updates"), st=u.status||{}, L=u.latest;
+  const running = u.queued || st.state==="running";
+  el.innerHTML=`<div class="card" style="${u.update_available?"border-color:rgba(var(--brand-rgb),.55)":""}"><div class="card-h"><h3>${I("up")} Updates</h3><span class="pill ${u.hub.connected?"green":"red"}">${u.hub.connected?"connected to update server":"update server unreachable"}</span></div>
+   <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap"><div><div class="dim" style="font-size:12px">Installed</div><div style="font-size:22px;font-weight:700">v${esc(u.version)}</div></div>
+    ${L?`<div><div class="dim" style="font-size:12px">Latest</div><div style="font-size:22px;font-weight:700">v${esc(L.version)} ${L.critical?'<span class="pill red">critical</span>':""}</div></div>`:""}
+    <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" onclick="updAct('check')">Check now</button>
+    ${running?`<span class="pill gold" style="padding:8px 12px"><span class="dot wait"></span>&nbsp;Updating… the panel restarts in about a minute</span>`:u.update_available?`<button class="btn" onclick="updAct('update')">Update to v${esc(L.version)}</button>`:`<span class="pill green" style="padding:8px 12px">Up to date</span>`}</div></div>
+   ${u.update_available&&L?`<div class="card" style="margin-top:14px;background:var(--glass3)"><b>${esc(L.title||"What's new")}</b><div style="white-space:pre-wrap;margin-top:6px;color:#d4dbe8">${esc(L.notes||"")}</div></div>`:""}
+   ${st.state==="failed"?`<div class="card neg" style="margin-top:12px">⚠️ The last update (${esc(st.from)} → ${esc(st.target||"?")}) failed. <details><summary>Show log</summary><pre class="mono" style="white-space:pre-wrap;font-size:12px">${esc(st.log||"")}</pre></details></div>`:st.state==="done"&&st.from!==st.to?`<p class="pos" style="margin:12px 0 0">✓ Updated ${esc(st.from)} → ${esc(st.to)} ${ago(st.at)}</p>`:""}
+   ${u.updater?"":`<p class="dim" style="font-size:12.5px;margin:12px 0 0">One-click updates need the host updater, which the one-line installer sets up.</p>`}
+   <label class="chk" style="margin-top:16px"><input type="checkbox" id="ua" ${u.prefs.auto?"checked":""} onchange="updPrefs()"><span>Install updates automatically<small>Checks every 15 minutes</small></span></label>
+   <label class="chk"><input type="checkbox" id="ur" ${u.prefs.allow_remote?"checked":""} onchange="updPrefs()"><span>Allow the developer to push updates to this bot<small>Lets OpsLab install a fix for you remotely</small></span></label></div>`;
+  clearInterval(updPoll); if(running) updPoll=setInterval(()=>{ updCard().catch(()=>{}); }, 6000);
+}
+async function updAct(action){ if(action==="update"&&!confirm(`Update to v${UPD.latest.version}? The bot and panel restart for about a minute.`)) return;
+  if(await act(()=>api("/api/updates",{action}),action==="check"?"Checked":"Update started")) updCard(); }
+async function updPrefs(){ await act(()=>api("/api/updates",{action:"prefs",auto:$("#ua").checked,allow_remote:$("#ur").checked}),"Saved"); }
 async function saveSettings(){ const b={}; $$("[data-s]").forEach(e=>b[e.dataset.s]=e.type==="checkbox"?e.checked:e.value); await act(()=>api("/api/settings",b),"Settings saved"); }
 async function cadCard(d){
-  const c=await api("/api/cad");
-  $("#cadcard").innerHTML=`<div class="card"><div class="card-h"><h3>SnailyCAD integration</h3><span class="pill ${c.enabled?"green":""}">${c.enabled?"enabled":"off"}</span></div>
-   <p class="mute" style="margin-top:0">For a <b>self-hosted</b> SnailyCAD (MySQL). CAD tickets for Discord-linked citizens become citations; paying them here marks the CAD record PAID; tickets paid/removed in the CAD are voided. Adds <code>/cad profile</code>.</p>
+  const c=await api("/api/cad"), api=c.mode!=="db";
+  $("#cadcard").innerHTML=`<div class="card"><div class="card-h"><h3>SnailyCAD</h3><span class="pill ${c.enabled?"green":""}">${c.enabled?"connected":"off"}</span></div>
+   <p class="mute" style="margin-top:0">CAD tickets for citizens whose CAD account is linked to Discord become citations here. Paying them marks the CAD ticket <b>PAID</b>; tickets paid in the CAD are cleared here. Adds <code>/cad profile</code>.</p>
    ${c.last_error?`<p class="neg">⚠️ ${esc(c.last_error)}</p>`:""}${c.last_sync?`<p class="dim">Last sync ${ago(c.last_sync)}</p>`:""}
    <label class="chk"><input type="checkbox" id="ce" ${c.enabled?"checked":""}><span><b>Enabled</b></span></label>
-   <div class="row"><div style="flex:3"><label class="l">Database host</label><input class="in" id="ch" value="${esc(c.host||"")}"></div><div><label class="l">Port</label><input class="in" id="cp" value="${esc(c.port||"3306")}"></div></div>
-   <div class="row"><div><label class="l">Database</label><input class="in" id="cdb" value="${esc(c.database||"")}"></div><div><label class="l">User</label><input class="in" id="cu" value="${esc(c.user||"")}"></div><div><label class="l">Password${c.has_password?' <span class="dim">(saved)</span>':""}</label><input class="in" id="cpw" type="password" autocomplete="off"></div></div>
+   <div class="seg" style="margin:6px 0 4px"><button class="${api?"on":""}" onclick="cadMode('api')">API token (hosted or self-hosted)</button><button class="${api?"":"on"}" onclick="cadMode('db')">Direct database (self-hosted)</button></div>
+   <input type="hidden" id="cmode" value="${api?"api":"db"}">
+   <div id="cad_api" style="display:${api?"":"none"}">
+    <label class="l">CAD or API URL <span class="dim">— e.g. https://csrpcad.snailyapp.com (the API address is worked out automatically)</span></label><input class="in" id="caurl" value="${esc(c.api_url||"")}" placeholder="https://yourcad.snailyapp.com">
+    <label class="l">API token ${c.has_token?'<span class="dim">(saved — leave empty to keep)</span>':'<span class="dim">— CAD → Admin → CAD Settings → API Token → enable & copy</span>'}</label><input class="in" id="catok" type="password" autocomplete="off">
+    <p class="dim" style="font-size:12px">In the CAD also turn on the <b>Citizen record payments</b> feature so paid fines can be marked in the CAD.</p></div>
+   <div id="cad_db" style="display:${api?"none":""}">
+    <div class="row"><div style="flex:3"><label class="l">Database host</label><input class="in" id="ch" value="${esc(c.host||"")}"></div><div><label class="l">Port</label><input class="in" id="cp" value="${esc(c.port||"3306")}"></div></div>
+    <div class="row"><div><label class="l">Database</label><input class="in" id="cdb" value="${esc(c.database||"")}"></div><div><label class="l">User</label><input class="in" id="cu" value="${esc(c.user||"")}"></div><div><label class="l">Password${c.has_password?' <span class="dim">(saved)</span>':""}</label><input class="in" id="cpw" type="password" autocomplete="off"></div></div></div>
    <label class="l">Department that receives CAD fines</label><select class="in" id="cd">${opt(d.depts.map(x=>({id:x.id,label:x.name})),c.dept_id,"— treasury —")}</select>
    <label class="chk"><input type="checkbox" id="cst" ${c.sync_tickets!==false?"checked":""}><span>Import CAD tickets as citations</span></label>
    <label class="chk"><input type="checkbox" id="cmp" ${c.mark_paid!==false?"checked":""}><span>Mark CAD tickets PAID when paid here</span></label>
    ${c.enabled?"":`<label class="chk"><input type="checkbox" id="cio"><span>Also import older unpaid tickets</span></label>`}
    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" onclick="cadTest()">Test connection</button><button class="btn" onclick="cadSave()">Save</button></div><div id="cadres"></div></div>`;
 }
-const cadBody=()=>({enabled:$("#ce").checked,host:$("#ch").value,port:$("#cp").value,database:$("#cdb").value,user:$("#cu").value,password:$("#cpw").value,dept_id:$("#cd").value,sync_tickets:$("#cst").checked,mark_paid:$("#cmp").checked,import_old:$("#cio")?.checked});
-async function cadTest(){ try{ const r=await api("/api/cad/test",cadBody()); $("#cadres").innerHTML=`<div class="card" style="margin-top:12px;border-color:rgba(52,211,153,.5)">✅ ${r.citizens} citizens · ${r.linked_users} users linked to Discord · ${r.unpaid_tickets} unpaid tickets${r.can_mark_paid?"":"<br>⚠️ This DB user can't UPDATE — tickets won't be marked paid in the CAD."}</div>`; }catch(e){ $("#cadres").innerHTML=`<div class="card neg" style="margin-top:12px">${esc(e.message)}</div>`; } }
+function cadMode(m){ $("#cmode").value=m; $("#cad_api").style.display=m==="api"?"":"none"; $("#cad_db").style.display=m==="api"?"none":""; $$("#cadcard .seg button").forEach((b,i)=>b.classList.toggle("on",(i===0)===(m==="api"))); }
+const cadBody=()=>({mode:$("#cmode").value,enabled:$("#ce").checked,api_url:$("#caurl").value,api_token:$("#catok").value,host:$("#ch").value,port:$("#cp").value,database:$("#cdb").value,user:$("#cu").value,password:$("#cpw").value,dept_id:$("#cd").value,sync_tickets:$("#cst").checked,mark_paid:$("#cmp").checked,import_old:$("#cio")?.checked});
+async function cadTest(){ try{ const r=await api("/api/cad/test",cadBody()); $("#cadres").innerHTML=`<div class="card" style="margin-top:12px;border-color:rgba(52,211,153,.5)">✅ Connected${r.api_base?` to <code>${esc(r.api_base)}</code>`:""} · ${r.citizens} citizens with records · ${r.linked_users} CAD users linked to Discord${r.unpaid_tickets!=null?` · ${r.unpaid_tickets} unpaid tickets`:""}${r.can_mark_paid?"":"<br>⚠️ This DB user can't UPDATE — tickets won't be marked paid in the CAD."}</div>`; }catch(e){ $("#cadres").innerHTML=`<div class="card neg" style="margin-top:12px">${esc(e.message)}</div>`; } }
 async function cadSave(){ if(await act(()=>api("/api/cad",cadBody()),"Saved")) pSettings(); }
+
+/* ───────────────────────── onboarding wizard ───────────────────────── */
+let WZ=null;
+const WZ_STEPS=[["welcome","Welcome"],["features","Features"],["channels","Channels"],["staff","Staff access"],["economy","Economy"],["finish","Finish"]];
+async function startWizard(){
+  $("#app").innerHTML=`<div class="center">${empty("⏳","Loading your server…")}</div>`;
+  const [g, st, se] = await Promise.all([api("/api/guild-setup"), api("/api/staff"), api("/api/settings")]);
+  GS=g; STAFF=st;
+  RANKS=st.ranks.map(r=>({...r, users:r.users.map(u=>u.id), _users:Object.fromEntries(r.users.map(u=>[u.id,u]))}));
+  WZ={step:0, cfg:{...g.config}, features:{...g.features}, eco:{...se.settings}, owners:st.owners.map(o=>o.id), ownerInfo:Object.fromEntries(st.owners.map(o=>[o.id,o])), TT:JSON.parse(JSON.stringify(g.config.ticket_types||[]))};
+  wzDraw();
+}
+function wzShell(inner){
+  const i=WZ.step;
+  return `<div class="center" style="align-items:start;padding-top:5vh"><div class="wizard" style="max-width:860px">
+   <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px"><img src="/brand/logo" style="width:52px;height:52px;border-radius:50%;box-shadow:0 0 0 2px rgba(var(--brand-rgb),.4)" alt="">
+    <div style="flex:1"><div class="dim" style="font-size:12px;text-transform:uppercase;letter-spacing:.1em">Step ${i+1} of ${WZ_STEPS.length}</div><div style="font-size:20px;font-weight:700">${WZ_STEPS[i][1]}</div></div>
+    <a class="btn ghost sm" href="#" onclick="event.preventDefault();if(ME.onboarded||confirm('Skip the wizard? You can run it again any time from the sidebar.')){if(PAGE==='wizard')PAGE='setup';ME.onboarded=true;shell();}">${ME.onboarded?"Close":"Skip"}</a></div>
+   <div class="steps">${WZ_STEPS.map((x,j)=>`<div class="${j<=i?"on":""}" title="${x[1]}"></div>`).join("")}</div>
+   <div class="card" style="padding:24px">${inner}</div>
+   <div style="display:flex;justify-content:space-between;margin-top:16px;gap:10px">${i?`<button class="btn ghost" onclick="wzGo(-1)">← Back</button>`:"<span></span>"}
+    ${i<WZ_STEPS.length-1?`<button class="btn" onclick="wzGo(1)">Next →</button>`:`<button class="btn" id="wzfin" style="padding:12px 26px" onclick="wzFinish()">Finish setup ✓</button>`}</div></div></div>`;
+}
+function wzCollect(){
+  $$("[data-wk]").forEach(e=>WZ.cfg[e.dataset.wk]=e.value);
+  $$("[data-we]").forEach(e=>WZ.eco[e.dataset.we]=e.type==="checkbox"?e.checked:e.value);
+  $$("[data-wf]").forEach(e=>WZ.features[e.dataset.wf]=e.classList.contains("on"));
+  if($("#tstaff")) WZ.cfg.ticket_staff_roles=rpVal("tstaff");
+  if($("#wz_tt")) WZ.cfg.ticket_types=WZ.TT;
+  if($("#ranks")) syncRankRoles();
+}
+function wzGo(d){ wzCollect(); WZ.step=Math.max(0,Math.min(WZ_STEPS.length-1,WZ.step+d));
+  if(WZ_STEPS[WZ.step][0]==="economy" && !WZ.features.economy) WZ.step+=d; window.scrollTo(0,0); wzDraw(); }
+function wzDraw(){
+  const k=WZ_STEPS[WZ.step][0], c=WZ.cfg, g=GS, f=WZ.features;
+  const chs=g.channels.map(x=>({id:x.id,label:"#"+x.name+(x.cat?`  ·  ${x.cat}`:"")})), cats=g.categories.map(x=>({id:x.id,label:x.name})), roles=g.roles.map(r=>({id:r.id,label:"@"+r.name}));
+  let h="";
+  if(k==="welcome") h=`<h2 style="margin-top:0">👋 Welcome! Let's set up ${esc(ME.guild.name)}</h2><p class="mute">This takes about two minutes. Everything can be changed later from the panel.</p>
+    <div style="display:flex;gap:16px;align-items:center;margin-top:18px"><img src="/brand/logo?${Date.now()}" style="width:80px;height:80px;border-radius:50%" alt=""><div><button class="btn ghost sm" onclick="upLogo()">Upload your logo</button><div class="dim" style="font-size:12px;margin-top:6px">Used as the panel icon and background.</div></div></div>
+    <div class="row"><div><label class="l">Short name</label><input class="in" data-wk="brand_name" value="${esc(c.brand_name)}"></div><div style="max-width:130px;min-width:110px"><label class="l">Colour</label><input class="in" type="color" data-wk="brand_color" value="${esc(c.brand_color)}" style="height:42px;padding:4px"></div></div>
+    <label class="l">Full community name</label><input class="in" data-wk="brand_full" value="${esc(c.brand_full)}" placeholder="California State Roleplay">
+    ${ME.onboarded?`<div class="card" style="margin-top:20px;background:var(--glass3);display:flex;gap:12px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:220px"><b>Change something, or start over?</b><div class="mute" style="font-size:13px">Step through and change what you like — or reset every step to the defaults. Nothing is saved until you press <b>Finish</b>.</div></div><button class="btn red sm" onclick="wzReset()">Reset to defaults</button></div>`:""}`;
+  if(k==="features") h=`<h2 style="margin-top:0">🧩 What do you want the bot to do?</h2><p class="mute">Switch off anything you don't need — its commands disappear from Discord.</p>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">${Object.entries(g.feature_info).map(([x,v])=>`<div class="feat ${f[x]?"on":""}" data-wf="${x}" onclick="this.classList.toggle('on')"><div class="t"><b>${esc(v.name)}</b><small>${esc(v.cmds)}</small></div><div class="switch"></div></div>`).join("")}</div>`;
+  if(k==="channels"){ const need=[f.documents&&"docs_channel",f.tickets&&"ticket_panel_channel",f.applications&&"apps_channel","log_channel"].filter(Boolean);
+    h=`<h2 style="margin-top:0">📺 Where should the bot post?</h2>
+    <div class="card" style="background:rgba(var(--brand-rgb),.08);border-color:rgba(var(--brand-rgb),.4);display:flex;gap:14px;align-items:center;flex-wrap:wrap"><div style="font-size:28px">⚡</div><div style="flex:1;min-width:220px"><b>Easiest: let the bot create them</b><div class="mute" style="font-size:13px">Makes an info category (documents, support, applications), private staff logs, a Tickets category and a “Read the documents” role.</div></div><button class="btn" id="wzac" onclick="wzAuto()">Create channels for me</button></div>
+    <div class="dim" style="text-align:center;margin:14px 0;font-size:12px">— or choose existing channels —</div>
+    <label class="l">Log channel (money & staff actions)</label><select class="in" data-wk="log_channel">${opt(chs,c.log_channel,"— none —")}</select>
+    ${f.documents?`<div class="row"><div><label class="l">Documents panel</label><select class="in" data-wk="docs_channel">${opt(chs,c.docs_channel,"— don't post —")}</select></div><div><label class="l">“I have read the documents” gives</label><select class="in" data-wk="docs_ack_role">${opt(roles,c.docs_ack_role,"— no button —")}</select></div></div>`:""}
+    ${f.tickets?`<div class="row"><div><label class="l">Ticket panel</label><select class="in" data-wk="ticket_panel_channel">${opt(chs,c.ticket_panel_channel,"— don't post —")}</select></div><div><label class="l">Open tickets under</label><select class="in" data-wk="ticket_category">${opt(cats,c.ticket_category,"— no category —")}</select></div></div>
+     <label class="l">Ticket transcripts go to</label><select class="in" data-wk="ticket_log_channel">${opt(chs,c.ticket_log_channel,"— log channel —")}</select>
+     <label class="l">Support staff roles (can see every ticket)</label>${rolePicker("tstaff",c.ticket_staff_roles)}
+     <label class="l">Ticket types</label><div id="wz_tt"></div><button class="btn ghost sm" style="margin-top:8px" onclick="WZ.TT.push({name:'',emoji:'🎫',description:''});wzTT()">+ Add type</button>`:""}
+    ${f.applications?`<label class="l">Applications panel</label><select class="in" data-wk="apps_channel">${opt(chs,c.apps_channel,"— don't post —")}</select>`:""}
+    <p class="dim" style="font-size:12.5px;margin-bottom:0">${need.filter(x=>c[x]).length}/${need.length} chosen</p>`; }
+  if(k==="staff") h=`<h2 style="margin-top:0">🛡️ Who can use the staff area?</h2><p class="mute">Nobody gets in by default — not even people with Manage Server. Owners have everything; ranks get only what you tick.</p>
+    <div class="card" style="background:var(--glass3)"><div class="card-h"><h3>👑 Owners</h3></div><div style="display:flex;flex-wrap:wrap;gap:8px">${WZ.owners.map(o=>`<span class="pill brand" style="padding:6px 10px;font-size:13px">${user(WZ.ownerInfo[o]||{name:o})}${STAFF.is_owner&&WZ.owners.length>1&&o!==ME.user.id?` <a href="#" style="color:inherit;text-decoration:none" onclick="event.preventDefault();WZ.owners=WZ.owners.filter(x=>x!=='${o}');wzCollect();wzDraw()">×</a>`:""}</span>`).join("")}</div>
+     ${STAFF.is_owner?`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><input class="in" id="wzown" placeholder="Add owner — Discord user ID" style="max-width:280px"><button class="btn ghost sm" onclick="wzOwner()">Add</button></div>`:""}</div>
+    <div class="dim" style="margin:16px 0 4px;font-size:13px">Link each rank to your Discord staff roles (e.g. Admin → @Admin). Anyone with that role gets the rank.</div><div id="ranks"></div>
+    <button class="btn ghost sm" style="margin-top:10px" onclick="syncRankRoles();rankAdd()">+ Add another rank</button>`;
+  if(k==="economy"){ const e=WZ.eco; h=`<h2 style="margin-top:0">💰 Economy basics</h2><p class="mute">Sensible defaults are filled in — change what you like.</p>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">${[["currency","Currency symbol"],["start_balance","Starting money"],["payroll_hours","Auto-payroll every N hours (0 = off)"],["citation_days","Days to pay a fine"],["late_fee","Late fee %"],["sales_tax","Sales tax %"]].map(([x,l])=>`<div><label class="l">${l}</label><input class="in" data-we="${x}" value="${esc(e[x])}"></div>`).join("")}</div>
+    <label class="chk"><input type="checkbox" data-we="dm_receipts" ${e.dm_receipts?"checked":""}><span>DM players receipts & notices</span></label>`; }
+  if(k==="finish"){ const on=Object.entries(f).filter(([x,v])=>v).map(([x])=>GS.feature_info[x]?.name||x);
+    h=`<h2 style="margin-top:0">🎉 All set — here's what happens when you finish</h2>
+    <div class="cols"><div><div class="nav-h" style="padding-left:0">Features on</div>${on.map(x=>`<div>✅ ${esc(x)}</div>`).join("")||"<div class='dim'>none</div>"}</div>
+    <div><div class="nav-h" style="padding-left:0">Discord</div>${[["docs_channel","Documents panel"],["ticket_panel_channel","Ticket panel"],["apps_channel","Applications panel"],["log_channel","Logs"]].map(([x,l])=>`<div>${c[x]?"✅":"▫️"} ${l}${c[x]?` → #${esc((GS.channels.find(y=>y.id==c[x])||{}).name||"channel")}`:" — not set"}</div>`).join("")}
+     <div class="nav-h" style="padding-left:0;margin-top:10px">Staff</div><div>👑 ${WZ.owners.length} owner(s)</div>${RANKS.map(r=>`<div>🛡️ ${esc(r.name)} — ${r.roles.length} role(s), ${r.users.length} user(s)</div>`).join("")}</div></div>
+    ${GS.bot_top_role<=1||(GS.role_problems||[]).length?`<div class="card" style="margin-top:16px;border-color:rgba(251,191,36,.5)">⚠️ Last thing in Discord: <b>Server Settings → Roles</b>, drag the bot's role near the top so it can hand out roles.</div>`:""}
+    <p class="mute" style="margin-bottom:0">The bot posts its panels right away. If you changed features it restarts for a few seconds.</p>`; }
+  $("#app").innerHTML=wzShell(h);
+  if(k==="staff") ranksDraw();
+  if(k==="channels" && f.tickets) wzTT();
+}
+function wzReset(){
+  if(!confirm("Reset features, channels, ticket types, staff ranks, branding and economy settings to defaults? (Owners and your data stay. Nothing is saved until you press Finish.)")) return;
+  WZ.features={economy:true,business:true,departments:true,payroll:true,citations:true,shop:true,tickets:true,documents:true,applications:true,cad:false};
+  ["log_channel","docs_channel","docs_ack_role","ticket_panel_channel","ticket_category","ticket_log_channel","apps_channel"].forEach(k=>WZ.cfg[k]="");
+  WZ.cfg.ticket_staff_roles=[]; WZ.cfg.brand_name="Panel"; WZ.cfg.brand_full=ME.guild.name; WZ.cfg.brand_color="#38b6ff";
+  WZ.TT=[{name:"General Support",emoji:"💬",description:"Questions or help with anything"},{name:"Player Report",emoji:"🚩",description:"Report a player or rule break"},{name:"Ban Appeal",emoji:"⚖️",description:"Appeal a ban or punishment"},{name:"Department Application",emoji:"🚓",description:"Join LEO / Fire / EMS / DOT"}];
+  WZ.eco={...WZ.eco,currency:"$",start_balance:5000,payroll_hours:168,citation_days:7,late_fee:10,sales_tax:0,dm_receipts:true};
+  RANKS=[{id:"admin",name:"Admin",color:"#f87171",perms:["economy","orgs","citations","tickets","applications","documents","setup"],roles:[],users:[],_users:{},assign_role:false},
+   {id:"moderator",name:"Moderator",color:"#a78bfa",perms:["citations","tickets","applications"],roles:[],users:[],_users:{},assign_role:false},
+   {id:"support",name:"Support",color:"#34d399",perms:["tickets"],roles:[],users:[],_users:{},assign_role:false}];
+  toast("Reset — step through and press Finish to apply"); wzDraw();
+}
+function wzTT(){ $("#wz_tt").innerHTML=WZ.TT.map((t,i)=>`<div class="tt-row" style="display:flex;gap:6px;margin-top:8px"><input class="in tt-emoji" style="width:58px" value="${esc(t.emoji)}" oninput="WZ.TT[${i}].emoji=this.value"><input class="in tt-name" style="flex:1" value="${esc(t.name)}" placeholder="Name" oninput="WZ.TT[${i}].name=this.value"><input class="in tt-desc" style="flex:2" value="${esc(t.description)}" placeholder="Description" oninput="WZ.TT[${i}].description=this.value"><button class="btn red sm" onclick="WZ.TT.splice(${i},1);wzTT()">✕</button></div>`).join(""); }
+function wzOwner(){ const v=$("#wzown").value.trim(); if(!/^\d{15,21}$/.test(v)) return toast("That's not a Discord user ID",false); wzCollect(); if(!WZ.owners.includes(v)) WZ.owners.push(v); wzDraw(); }
+async function wzAuto(){ wzCollect();
+  // save features first so the right panels get created/posted
+  $("#wzac").disabled=true; $("#wzac").textContent="Creating…";
+  const r=await act(()=>api("/api/guild-setup/autocreate",{}));
+  if(r){ const g=await api("/api/guild-setup"); GS=g; ["log_channel","docs_channel","docs_ack_role","ticket_panel_channel","ticket_category","ticket_log_channel","apps_channel"].forEach(x=>{ if(g.config[x]) WZ.cfg[x]=g.config[x]; });
+    toast(`Created ${r.made.length} channels/roles`); wzDraw(); }
+  else if($("#wzac")){ $("#wzac").disabled=false; $("#wzac").textContent="Create channels for me"; }
+}
+async function wzFinish(){
+  wzCollect(); $("#wzfin").disabled=true; $("#wzfin").textContent="Saving…";
+  const steps=[];
+  if(WZ.features.economy) steps.push(()=>api("/api/settings",Object.fromEntries(["currency","start_balance","payroll_hours","citation_days","late_fee","sales_tax","dm_receipts"].map(x=>[x,WZ.eco[x]]))));
+  if(STAFF.is_owner) steps.push(()=>api("/api/staff",{owners:WZ.owners,confirm_self_remove:false}));
+  steps.push(()=>api("/api/staff",{ranks:RANKS.map(({_users,role_members,...x})=>x)}));
+  const keys=["log_channel","docs_channel","docs_ack_role","ticket_panel_channel","ticket_category","ticket_log_channel","apps_channel","brand_name","brand_full","brand_color","ticket_max_open","docs_title","docs_text","ticket_panel_title","ticket_panel_text","apps_title","apps_text"];
+  let res=null;
+  steps.push(async()=>{ res=await api("/api/guild-setup",{...Object.fromEntries(keys.map(x=>[x,WZ.cfg[x]])),ticket_staff_roles:WZ.cfg.ticket_staff_roles||[],ticket_types:WZ.TT,features:WZ.features,onboarded:true}); });
+  for(const s of steps){ if(!await act(s)){ $("#wzfin").disabled=false; $("#wzfin").textContent="Finish setup ✓"; return; } }
+  $("#app").innerHTML=`<div class="center"><div class="auth" style="max-width:520px"><div style="font-size:54px">🚀</div><h1>You're live!</h1>
+   <p>${res&&res.restarting?"The bot is restarting with your features — give it a few seconds. ":""}Panels are being posted in Discord.</p>
+   <button class="btn" style="padding:12px 26px" onclick="location.href='/#overview';location.reload()">Open the panel</button></div></div>`;
+}
 
 /* ───────────────────────── boot ───────────────────────── */
 (async function boot(){
@@ -671,7 +837,7 @@ async function cadSave(){ if(await act(()=>api("/api/cad",cadBody()),"Saved")) p
   CUR=ME.currency; applyBrand(ME.brand);
   const h=location.hash.slice(1), base=h.split("-")[0];
   if(h.startsWith("doc-edit")) PAGE="docbuilder"; else if(h.startsWith("ticket-")) PAGE="tickets"; else if(h.startsWith("apply-")) PAGE="apply"; else if(PAGES[base]) PAGE=base;
-  if(can("setup") && !ME.onboarded && !h) PAGE="setup";
+  if(can("setup") && !ME.onboarded) return startWizard().catch(e=>{ toast(e.message,false); shell(); });
   shell();
 })();
 </script>

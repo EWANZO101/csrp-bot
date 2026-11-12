@@ -30,6 +30,7 @@ services:
       WEB_HOST: 0.0.0.0
       WEB_PORT: 8095
       PUBLIC_URL: ${PUBLIC_URL:-}
+      HUB_URL: ${HUB_URL:-https://ops-discordb.opslabsystems.cloud}
     volumes:
       - ./data:/app/data
     ports:
