@@ -95,7 +95,10 @@ DOMAIN="$DOMAIN"; DIR="$DIR"
 [ -d /etc/letsencrypt/live/\$DOMAIN ] && grep -q "^PUBLIC_URL=https://\$DOMAIN" \$DIR/.env && { rm -f /etc/cron.d/csrp-bot-ssl; exit 0; }
 MYIP=\$(curl -s -m5 https://api.ipify.org)
 DNSIP=\$(dig +short A \$DOMAIN @1.1.1.1 | tail -n1)
-[ -n "\$MYIP" ] && [ "\$MYIP" = "\$DNSIP" ] || { echo "\$DOMAIN -> '\$DNSIP', this server is \$MYIP — not ready yet"; exit 0; }
+# ready when DNS points straight here, or (Cloudflare proxy) the domain already serves this panel
+if ! { [ -n "\$MYIP" ] && [ "\$MYIP" = "\$DNSIP" ]; } && ! curl -s -m8 "http://\$DOMAIN/api/brand" | grep -q '"rgb"'; then
+  echo "\$(date '+%F %T') \$DOMAIN -> '\$DNSIP', this server is \$MYIP — not ready yet"; exit 0
+fi
 certbot --nginx -d \$DOMAIN --non-interactive --agree-tos --register-unsafely-without-email --redirect --keep-until-expiring || exit 1
 sed -i "s#^PUBLIC_URL=.*#PUBLIC_URL=https://\$DOMAIN#" \$DIR/.env
 cd \$DIR && docker compose up -d >/dev/null 2>&1
