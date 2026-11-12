@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#060a12"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="/brand/logo">
+<title>Panel</title>
+<link rel="icon" href="/brand/logo">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css?v=8">
+</head>
+<body>
+<div class="backdrop"></div><div class="watermark"></div>
+<div id="app"></div>
+<div class="modal-bg" id="mbg"><div class="modal" id="mbox"><button class="x" onclick="closeModal()" aria-label="Close">×</button><div id="mbody"></div></div></div>
+<div class="toast" id="toast"></div>
+<script>
+/* ───────────────────────── helpers ───────────────────────── */
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let ME=null, CUR="$", PAGE="", BRAND={name:"Panel",full:"",color:"#38b6ff"}, GS=null;
+const fmt = n => (n<0?"-":"")+CUR+Math.abs(Number(n||0)).toLocaleString();
+const ago = iso => { if(!iso) return "—"; const s=(Date.now()-new Date(iso))/1000, f=Math.abs(s);
+  const t=f<60?`${Math.round(f)}s`:f<3600?`${Math.round(f/60)}m`:f<86400?`${Math.round(f/3600)}h`:`${Math.round(f/86400)}d`; return s>=0?`${t} ago`:`in ${t}`; };
+const dtx = iso => iso ? new Date(iso).toLocaleString() : "—";
+const user = u => u ? `<span class="u">${u.avatar?`<img src="${esc(u.avatar)}" alt="">`:""}${esc(u.name)}</span>` : `<span class="dim">—</span>`;
+const empty = (ico, t) => `<div class="empty"><span class="e-ico">${ico}</span>${t}</div>`;
+async function api(path, body){
+  const opt = body!==undefined ? {method:"POST",headers:{"Content-Type":"application/json","X-Panel":"1"},body:JSON.stringify(body)} : {};
+  const r = await fetch(path, opt); let j={}; try{ j=await r.json(); }catch(e){}
+  if(r.status===401){ renderLogin(); throw new Error("login"); }
+  if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+function toast(m, ok=true){ const t=$("#toast"); t.textContent=m; t.className="toast "+(ok?"ok":"err"); t.style.display="block"; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none",4000); }
+async function act(fn, okMsg){ try{ const r=await fn(); if(okMsg) toast(okMsg); return r||true; }catch(e){ if(e.message!=="login") toast(e.message,false); return false; } }
+function openModal(h, wide){ $("#mbody").innerHTML=h; $("#mbox").className="modal"+(wide?" wide":""); $("#mbg").style.display="flex"; }
+function closeModal(){ $("#mbg").style.display="none"; }
+$("#mbg").addEventListener("mousedown", e=>{ if(e.target.id==="mbg") closeModal(); });
+function applyBrand(b){ if(!b) return; BRAND={...BRAND,...Object.fromEntries(Object.entries(b).filter(([k,v])=>v))};
+  const m=/^#?([0-9a-f]{6})$/i.exec(BRAND.color||""); if(m){ const h=m[1]; document.documentElement.style.setProperty("--brand","#"+h);
+  document.documentElement.style.setProperty("--brand-rgb",[0,2,4].map(i=>parseInt(h.substr(i,2),16)).join(",")); }
+  document.title = `${BRAND.name} Panel`; }
+const copyBtn = t => `<button class="btn ghost sm" onclick="navigator.clipboard.writeText('${esc(t)}');toast('Copied')">Copy</button>`;
+const opt = (list, sel, blank="—") => `<option value="">${blank}</option>`+list.map(x=>`<option value="${x.id}" ${String(sel)===String(x.id)?"selected":""}>${esc(x.label||x.name)}</option>`).join("");
+
+/* icons (stroke) */
+const I = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${({
+ home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+ wallet:'<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M16 13h2M3 10h18M6 6V4.5A1.5 1.5 0 0 1 7.5 3H17"/>',
+ chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', users:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M17 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6 6 0 0 0-3.5-5.5"/>',
+ building:'<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 8h1M14 8h1M9 12h1M14 12h1M10 21v-4h4v4"/>',
+ alert:'<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17.5v.01"/>', list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+ ticket:'<path d="M3 8a2 2 0 0 0 0 4v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4a2 2 0 0 0 0-4V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M14 4v14" stroke-dasharray="2 2"/>',
+ form:'<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>', book:'<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20"/>',
+ cog:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+ sliders:'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>', send:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+ logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>', menu:'<path d="M3 6h18M3 12h18M3 18h18"/>', ext:'<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+ shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+ coins:'<circle cx="8" cy="8" r="6"/><path d="M18.1 10.4A6 6 0 1 1 10.4 18.1M7 6h1v4M16.7 13.9l.7.7-2.8 2.8"/>',
+})[n]||""}</svg>`;
+
+/* ───────────────────────── setup wizard ───────────────────────── */
+let SETUP={};
+function wizShell(step, inner){
+  return `<div class="center"><div class="wizard"><div style="text-align:center;margin-bottom:22px"><img src="/brand/logo" style="width:84px;height:84px;border-radius:50%;box-shadow:0 0 0 3px rgba(var(--brand-rgb),.35),0 20px 60px -10px rgba(var(--brand-rgb),.6)" alt="">
+   <h1 style="margin:14px 0 4px;font-size:26px">Set up your bot</h1><p class="mute" style="margin:0">Three quick steps. Everything else is done from the panel.</p></div>
+   <div class="steps">${[1,2,3].map(i=>`<div class="${i<=step?"on":""}"></div>`).join("")}</div><div class="card" style="padding:26px">${inner}</div></div></div>`;
+}
+function renderSetup(st){
+  SETUP = st || {};
+  $("#app").innerHTML = wizShell(1, `<h2 style="margin:0 0 6px">1 · Paste your bot token</h2>
+   <p class="mute" style="margin:0 0 14px">Open the <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord Developer Portal</a> → <b>New Application</b> → <b>Bot</b> tab → <b>Reset Token</b> → copy it.</p>
+   ${st.can_edit?"":`<label class="l">Setup code <span class="dim">— shown when you installed the bot (also in <code>data/setup-code.txt</code>)</span></label><input class="in" id="sc" autocomplete="off" style="text-transform:uppercase;letter-spacing:.15em;max-width:220px">`}
+   <label class="l">Bot token</label><input class="in" id="stk" type="password" autocomplete="off" placeholder="MTIz…">
+   <div style="margin-top:20px;display:flex;justify-content:flex-end"><button class="btn" id="sbtn" onclick="setupToken()">Continue →</button></div>`);
+  ($("#sc")||$("#stk")).focus(); $("#stk").onkeydown=e=>{ if(e.key==="Enter") setupToken(); };
+}
+async function setupToken(){
+  $("#sbtn").disabled=true;
+  const r = await act(()=>api("/api/setup/token",{code:$("#sc")?.value, token:$("#stk").value}));
+  if($("#sbtn")) $("#sbtn").disabled=false;
+  if(r) { SETUP={...SETUP,...r}; setupGuild(); }
+}
+let guildPoll=null;
+function setupGuild(){
+  const r=SETUP;
+  const fixes = (r.fixed||[]).map(f=>`<div class="pos" style="font-size:13px">✓ ${esc(f)}</div>`).join("");
+  $("#app").innerHTML = wizShell(2, `<div class="u" style="gap:14px;margin-bottom:12px">${r.bot_avatar?`<img src="${esc(r.bot_avatar)}" style="width:48px;height:48px" alt="">`:""}
+    <div><div class="b" style="font-size:17px">${esc(r.bot_name)}</div><div class="pos" style="font-size:13px">✓ Token accepted</div></div></div>${fixes}
+   ${r.members_ok?"":`<div class="card" style="border-color:rgba(251,191,36,.4);margin:12px 0;padding:12px">⚠️ Turn on <b>Server Members Intent</b>: <a href="${esc(r.portal)}/bot" target="_blank" rel="noopener">Bot settings</a> → Privileged Gateway Intents.</div>`}
+   <h2 style="margin:18px 0 6px">2 · Add it to your server</h2>
+   <p class="mute" style="margin:0 0 14px">Click the button, pick your server and authorise. It shows up below automatically.</p>
+   <a class="btn discord-btn" href="${esc(r.invite)}" target="_blank" rel="noopener">${I("ext")} Add ${esc(r.bot_name)} to a server</a>
+   <div id="glist" style="margin-top:20px"></div>`);
+  drawGuilds(r.guilds||[]);
+  clearInterval(guildPoll); guildPoll=setInterval(async()=>{ try{ const g=await api("/api/setup/guilds"); drawGuilds(g.guilds); }catch(e){} }, 3000);
+}
+function drawGuilds(gs){
+  const el=$("#glist"); if(!el) return clearInterval(guildPoll);
+  el.innerHTML = gs.length ? `<label class="l">Your bot is in — pick the server this bot is for:</label>`+gs.map(g=>`<button class="feat" style="width:100%;margin-top:8px;text-align:left" onclick="pickGuild('${g.id}')">
+     ${g.icon?`<img src="${esc(g.icon)}" style="width:38px;height:38px;border-radius:10px" alt="">`:`<div style="width:38px;height:38px;border-radius:10px;background:var(--glass2);display:grid;place-items:center">${esc(g.name[0])}</div>`}
+     <div class="t"><b>${esc(g.name)}</b><small>${g.id}</small></div><span class="btn sm">Use this server</span></button>`).join("")
+   : `<div class="mute" style="display:flex;align-items:center;gap:10px"><span class="dot wait"></span> Waiting for the bot to join a server…</div>`;
+}
+async function pickGuild(id){
+  clearInterval(guildPoll);
+  if(!await act(()=>api("/api/setup/finish",{guild_id:id}))) return;
+  const r=SETUP;
+  if(r.redirect_ok) return setupDone();
+  $("#app").innerHTML = wizShell(3, `<h2 style="margin:0 0 6px">3 · Allow Discord login</h2>
+   <p class="mute" style="margin:0 0 14px">Discord needs this panel's address once. Open <a href="${esc(r.portal)}/oauth2" target="_blank" rel="noopener">OAuth2 settings</a> → <b>Redirects</b> → <b>Add Redirect</b>, paste this, then <b>Save Changes</b>:</p>
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code class="copy">${esc(r.redirect_uri)}</code>${copyBtn(r.redirect_uri)}</div>
+   <div class="mute" style="margin-top:18px;display:flex;align-items:center;gap:10px"><span class="dot wait"></span> Waiting for you to save it…</div>
+   <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:8px"><button class="btn ghost" onclick="setupDone()">I've done it</button></div>`);
+  guildPoll=setInterval(async()=>{ try{ const c=await api("/api/setup/redirect"); if(c.redirect_ok){ clearInterval(guildPoll); setupDone(); } }catch(e){} }, 3000);
+}
+function setupDone(){
+  clearInterval(guildPoll);
+  $("#app").innerHTML = wizShell(3, `<div style="text-align:center;padding:10px 0"><div style="font-size:46px">🎉</div><h2 style="margin:8px 0">You're connected</h2>
+   <p class="mute">The bot is starting and adding its slash commands to your server. Log in to choose channels, features and branding.</p>
+   <a class="btn discord-btn" href="/login" style="margin-top:12px">Login with Discord</a></div>`);
+}
+
+/* ───────────────────────── auth screens ───────────────────────── */
+function renderLogin(){
+  $("#app").innerHTML = `<div class="center"><div class="auth"><img class="logo" src="/brand/logo" alt="">
+   <h1>${esc(BRAND.full||BRAND.name)}</h1><p>Sign in with Discord to manage your account, read documents and apply.</p>
+   <a class="btn discord-btn" href="/login${location.hash?`?next=/${encodeURIComponent(location.hash)}`:""}"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.4 18.4 0 0 0-5.6 0L8.6 3a19.7 19.7 0 0 0-4.9 1.5C.6 9.1-.3 13.6.1 18.1a19.9 19.9 0 0 0 6 3l1.3-2.1a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2.1a19.8 19.8 0 0 0 6-3c.5-5.2-.8-9.7-3.6-13.7zM8 15.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.6 8 10.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4z"/></svg>Login with Discord</a>
+   <p style="margin-top:26px"><a class="mute" href="/docs">📚 Browse public documents →</a></p></div></div>`;
+}
+function renderOffline(st){
+  $("#app").innerHTML = `<div class="center"><div class="wizard"><div class="auth" style="max-width:none"><img class="logo" src="/brand/logo" alt=""><h1>Bot is ${esc(st.status||"offline")}</h1></div>
+   ${st.can_edit?botCard(st):`<div class="card" style="text-align:center"><p class="mute">The panel will be back as soon as the bot is online.</p><a class="btn ghost" href="/login">Bot owner login</a></div>`}</div></div>`;
+}
+
+/* ───────────────────────── shell / nav ───────────────────────── */
+const can = p => (ME.perms||[]).includes(p);
+function navItems(){
+  const f=ME.features, a=ME.admin, c=ME.counts||{}, out=[];
+  out.push(["h","You"]);
+  if(f.economy) out.push(["me","My account","wallet"]);
+  if(f.documents) out.push(["docs","Documents","book"]);
+  if(f.applications) out.push(["apply","Apply","form"]);
+  if(a){
+    out.push(["h","Staff"]); out.push(["overview","Overview","chart"]);
+    if(f.economy&&can("economy")) out.push(["users","Citizens","users"]);
+    if((f.business||f.departments)&&can("orgs")) out.push(["orgs","Businesses & Depts","building"]);
+    if(f.citations&&can("citations")) out.push(["citations","Citations","alert",c.citations]);
+    if(f.economy&&can("economy")) out.push(["ledger","Transactions","list"]);
+    if(f.tickets&&can("tickets")) out.push(["tickets","Tickets","ticket",c.tickets]);
+    if(f.applications&&can("applications")) out.push(["applications","Applications","form",c.applications]);
+    if(f.documents&&can("documents")) out.push(["docbuilder","Document builder","book"]);
+    if(can("setup")||can("staff")) out.push(["h","Configure"]);
+    if(can("setup")) { out.push(["setup","Server setup","sliders"]); out.push(["settings","Settings","cog"]); }
+    if(can("staff")) out.push(["staff","Staff access","shield"]);
+  }
+  return out;
+}
+const PAGES = {me:()=>pMe(), docs:()=>pDocs(), apply:()=>pApply(), overview:()=>pOverview(), users:()=>pUsers(), orgs:()=>pOrgs(), citations:()=>pCitations(), ledger:()=>pLedger(),
+  tickets:()=>pTickets(), applications:()=>pApplications(), docbuilder:()=>pDocBuilder(), setup:()=>pSetup(), settings:()=>pSettings(), staff:()=>pStaff()};
+function shell(){
+  const items = navItems();
+  if(!PAGE || !items.some(i=>i[0]===PAGE)) PAGE = (items.find(i=>i[0]!=="h")||["docs"])[0];
+  $("#app").innerHTML = `<div class="mobile-top"><button class="btn ghost icon" onclick="$('.side').classList.toggle('open')">${I("menu")}</button><img src="/brand/logo" alt=""><b>${esc(BRAND.name)}</b></div>
+  <div class="app"><aside class="side"><a class="brand" href="/"><img src="/brand/logo" alt=""><span><b>${esc(BRAND.name)}</b><small>${esc(BRAND.full||ME.guild.name)}</small></span></a>
+   ${items.map(i=>i[0]==="h"?`<div class="nav-h">${i[1]}</div>`:`<button class="nav ${i[0]===PAGE?"on":""}" data-p="${i[0]}">${I(i[2])}<span>${i[1]}</span>${i[3]?`<span class="badge">${i[3]}</span>`:""}</button>`).join("")}
+   <div class="grow"></div>
+   <div class="me">${ME.user.avatar?`<img src="${esc(ME.user.avatar)}" alt="">`:""}<div class="n"><b>${esc(ME.user.name)}</b><small>${esc((ME.ranks||[]).join(", ")||"Member")}</small></div><a class="btn ghost icon" href="/logout" title="Log out">${I("logout")}</a></div>
+  </aside><div class="side-dim" onclick="$('.side').classList.remove('open')"></div><main class="main" id="main"></main></div>
+  <nav class="bottom-nav">${bottomItems(items).map(i=>`<button class="${i[0]===PAGE?"on":""}" data-b="${i[0]}">${I(i[2])}<span>${i[1]}</span>${i[3]?`<span class="badge">${i[3]}</span>`:""}</button>`).join("")}<button data-b="__more">${I("menu")}<span>More</span></button></nav>`;
+  $$(".nav").forEach(b=>b.onclick=()=>go(b.dataset.p));
+  $$("[data-b]").forEach(b=>b.onclick=()=>b.dataset.b==="__more"?$(".side").classList.add("open"):go(b.dataset.b));
+  render();
+}
+function bottomItems(items){
+  const pages=items.filter(i=>i[0]!=="h"), short={"Businesses & Depts":"Orgs","Document builder":"Docs","Pending applications":"Apps","My account":"Account","Server setup":"Setup","Transactions":"Ledger"};
+  const pref = ME.admin ? ["overview","tickets","applications","me"] : ["me","docs","apply"];
+  return pref.map(k=>pages.find(i=>i[0]===k)).filter(Boolean).slice(0,4).map(i=>[i[0],short[i[1]]||i[1],i[2],i[3]]);
+}
+function go(p){ PAGE=p; history.replaceState(null,"","#"+p); $$(".nav").forEach(b=>b.classList.toggle("on",b.dataset.p===p)); $$("[data-b]").forEach(b=>b.classList.toggle("on",b.dataset.b===p)); window.scrollTo(0,0); $(".side")?.classList.remove("open"); render(); }
+async function render(){ $("#main").innerHTML=`<div class="empty"><span class="e-ico">⏳</span>Loading…</div>`; try{ await (PAGES[PAGE]||PAGES.docs)(); }catch(e){ if(e.message!=="login") $("#main").innerHTML=`<div class="card">${empty("⚠️",esc(e.message))}</div>`; } }
+const head = (t, sub, right="") => `<div class="page-h"><div><h1>${t}</h1>${sub?`<p>${sub}</p>`:""}</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${right}</div></div>`;
+const stat = (lbl, val, sub, ico) => `<div class="card stat"><div class="lbl">${lbl}</div><div class="val">${val}</div>${sub?`<div class="sub">${sub}</div>`:""}${ico?`<div class="ico">${I(ico)}</div>`:""}</div>`;
+const seg = (vals, cur, fn) => `<div class="seg">${vals.map(v=>`<button class="${v===cur?"on":""}" onclick="${fn}('${v}')">${v}</button>`).join("")}</div>`;
+
+/* ───────────────────────── shared tables ───────────────────────── */
+function flow(r, me){
+  const side = x => x.type==="mint"?"<i class='dim'>minted</i>":x.type==="burn"?"<i class='dim'>removed</i>":
+    `${esc(x.label)}${x.type==="wallet"?" <span class='dim'>(wallet)</span>":""}${x.type==="business"||x.type==="dept"?` <span class="pill ${x.type}">${x.type==="dept"?"dept":"biz"}</span>`:""}`;
+  let cls=""; if(me){ const i=["wallet","bank"].includes(r.dst.type)&&r.dst.id===me, o=["wallet","bank"].includes(r.src.type)&&r.src.id===me; cls=i&&o?"":i?"pos":"neg"; }
+  return `<td class="dim mono">#${r.id}</td><td>${side(r.src)} <span class="dim">→</span> ${side(r.dst)}</td><td class="${cls} b">${fmt(r.amount)}</td>
+    <td><span class="pill">${esc(r.kind)}</span>${r.reversed_by?' <span class="pill red">reversed</span>':""}</td><td class="mute">${esc(r.memo||"")}</td><td class="dim" title="${dtx(r.ts)}">${ago(r.ts)}</td>`;
+}
+const ledgerTable = (rows, me, undo) => rows.length ? `<div class="scroll"><table class="tbl"><tr><th>#</th><th>Flow</th><th>Amount</th><th>Type</th><th>Memo</th><th>When</th>${undo?"<th></th>":""}</tr>
+  ${rows.map(r=>`<tr>${flow(r,me)}${undo?`<td>${!r.reversed_by&&r.kind!=="undo"?`<button class="btn ghost sm" onclick="undo(${r.id})">Undo</button>`:""}</td>`:""}</tr>`).join("")}</table></div>` : empty("🧾","No transactions yet.");
+function citTable(rows, o={}){
+  if(!rows.length) return empty("✅","No citations.");
+  return `<div class="scroll"><table class="tbl"><tr><th>#</th>${o.who?"<th>Citizen</th>":""}<th>Reason</th><th>Total</th><th>Status</th><th>Due</th>${o.who?"<th>Issuer</th>":""}<th></th></tr>
+  ${rows.map(c=>`<tr><td class="dim mono">#${c.id}</td>${o.who?`<td>${user(c.user)}</td>`:""}<td>${esc(c.reason)}<div class="dim" style="font-size:12px">${esc(c.dept||"")}</div></td>
+   <td class="b">${fmt(c.amount+c.late_fee)}${c.late_fee?`<div class="dim" style="font-size:12px;font-weight:400">incl. ${fmt(c.late_fee)} late fee</div>`:""}</td>
+   <td><span class="pill ${c.overdue?"overdue":c.status}">${c.overdue?"overdue":c.status}</span></td><td class="dim">${c.status==="unpaid"?ago(c.due_at):c.status==="paid"?"paid "+ago(c.paid_at):"—"}</td>
+   ${o.who?`<td>${user(c.issuer)}</td>`:""}<td style="white-space:nowrap">${c.status==="unpaid"?(o.pay?`<button class="btn green sm" onclick="payCit(${c.id})">Pay</button>`:"")+(o.admin?` <button class="btn ghost sm" onclick="citAct(${c.id},'waive_fee')">Waive fee</button> <button class="btn red sm" onclick="citAct(${c.id},'void')">Void</button>`:""):""}</td></tr>`).join("")}</table></div>`;
+}
+
+/* ───────────────────────── member pages ───────────────────────── */
+async function pMe(){
+  const d=await api("/api/my");
+  $("#main").innerHTML = head(`Welcome back, ${esc(ME.user.name)}`, "Your bank, inventory and fines.") +
+  `${d.frozen?`<div class="card" style="border-color:rgba(248,113,113,.5);margin-bottom:16px">🧊 Your account is frozen by staff.</div>`:""}
+  <div class="grid">${stat("Wallet",fmt(d.wallet),"Cash on hand","wallet")}${stat("Bank",fmt(d.bank),"Safe in the bank","building")}${stat("Net worth",fmt(d.wallet+d.bank),"","coins")}
+   <div class="card wide-sm"><div class="mute" style="font-size:12.5px;font-weight:500">Move money</div><div class="mv-row" style="display:flex;gap:6px;margin-top:10px"><input class="in" id="mv" placeholder="500, 2k, all"><button class="btn sm" onclick="mv('deposit')">Deposit</button><button class="btn ghost sm" onclick="mv('withdraw')">Withdraw</button></div></div></div>
+  <div class="cols" style="margin-top:16px"><div class="card"><div class="card-h"><h3>Inventory</h3></div>${d.items.length?`<table class="tbl">${d.items.map(i=>`<tr><td><b>${esc(i.name)}</b><div class="dim" style="font-size:12px">${esc(i.description||"")}</div></td><td>×${i.qty}</td><td class="dim">${esc(i.source||"")}</td></tr>`).join("")}</table>`:empty("🎒","Empty — buy things with <code>/shop</code> in Discord.")}</div>
+   <div class="card"><div class="card-h"><h3>Your businesses & departments</h3></div>${d.orgs.length?`<table class="tbl">${d.orgs.map(o=>`<tr><td><span class="pill ${o.kind}">${o.kind==="dept"?"dept":"biz"}</span> <b>${esc(o.name)}</b></td><td class="b">${fmt(o.balance)}</td><td class="dim">${o.level}</td></tr>`).join("")}</table>`:empty("🏢","None yet.")}</div></div>
+  <div class="card" style="margin-top:16px"><div class="card-h"><h3>Citations</h3></div>${citTable(d.citations,{pay:true})}</div>
+  <div class="card"><div class="card-h"><h3>Recent transactions</h3></div>${ledgerTable(d.history, ME.user.id)}</div>`;
+}
+async function mv(direction){ const amount=$("#mv").value.trim(); if(!amount) return; if(await act(()=>api("/api/my/move",{direction,amount}),direction==="deposit"?"Deposited":"Withdrawn")) pMe(); }
+async function payCit(id){ if(!confirm(`Pay citation #${id} from your bank?`)) return; if(await act(()=>api("/api/my/pay_citation",{id}),"Citation paid")) render(); }
+
+async function pDocs(){
+  const html = await (await fetch("/docs")).text();
+  const main = new DOMParser().parseFromString(html,"text/html").querySelector("main"); main.querySelector(".hero")?.remove();
+  $("#main").innerHTML = head("Documents", "SOPs, penal codes and server links.", `<a class="btn ghost" href="/docs" target="_blank">${I("ext")} Open full page</a>${can("documents")?`<button class="btn" onclick="go('docbuilder')">Manage documents</button>`:""}`) + main.innerHTML;
+}
+
+/* applications (member) */
+let APPLY=null;
+async function pApply(){
+  APPLY = await api("/api/apply");
+  const fs = APPLY.forms;
+  $("#main").innerHTML = head("Applications","Check the requirements, then apply.") + (fs.length?`<div class="doc-grid">${fs.map(f=>`<div class="doc-card"><div class="di">${esc(f.icon||"📝")}</div><b>${esc(f.name)}</b>
+     <p>${esc((f.description||"").slice(0,180))}</p><div style="margin:6px 0">${f.checks.map(c=>`<div style="font-size:13px;display:flex;gap:8px;margin:3px 0"><span>${c.ok===true?"✅":c.ok===false?"❌":"▫️"}</span><span class="${c.ok===false?"neg":""}">${esc(c.label)}${c.detail&&c.ok===false?` <span class="dim">(${esc(c.detail)})</span>`:""}</span></div>`).join("")}</div>
+     <div class="meta" style="margin-top:auto">${!f.is_open?'<span class="pill red">Closed</span>':f.eligible?`<button class="btn" onclick="applyForm(${f.id})">Apply now</button>`:'<span class="pill gold">Requirements not met</span>'}</div></div>`).join("")}</div>`:`<div class="card">${empty("📭","No applications are open right now.")}</div>`)
+   + `<div class="card" style="margin-top:20px"><div class="card-h"><h3>Your applications</h3></div>${APPLY.mine.length?`<table class="tbl"><tr><th>#</th><th>Application</th><th>Status</th><th>Submitted</th><th>Note</th></tr>${APPLY.mine.map(a=>`<tr><td class="dim mono">#${a.id}</td><td class="b">${esc(a.form_name)}</td><td><span class="pill ${a.status==="accepted"?"green":a.status==="denied"?"red":"gold"}">${a.status}</span></td><td class="dim">${ago(a.created_at)}</td><td class="mute">${esc(a.reason||"")}</td></tr>`).join("")}</table>`:empty("📝","You haven't applied for anything yet.")}</div>`;
+  const m=/^#apply-(\d+)/.exec(location.hash); if(m){ const f=fs.find(x=>x.id==m[1]); if(f&&f.eligible) applyForm(f.id); }
+}
+function qField(q){
+  const id=`qa_${q.id}`, req=q.required?' <span class="neg">*</span>':"";
+  const lab=`<label class="l" style="font-size:13.5px;color:var(--text)">${esc(q.label)}${req}</label>${q.help?`<div class="dim" style="font-size:12px;margin:-2px 0 6px">${esc(q.help)}</div>`:""}`;
+  if(q.type==="paragraph") return lab+`<textarea class="in" id="${id}" rows="5"></textarea>`;
+  if(q.type==="choice") return lab+`<select class="in" id="${id}"><option value="">Choose…</option>${q.options.map(o=>`<option>${esc(o)}</option>`).join("")}</select>`;
+  if(q.type==="multi") return lab+q.options.map(o=>`<label class="chk"><input type="checkbox" name="${id}" value="${esc(o)}"><span>${esc(o)}</span></label>`).join("");
+  if(q.type==="yesno") return lab+`<div class="seg" id="${id}" data-v=""><button type="button" onclick="segPick(this,'yes')">Yes</button><button type="button" onclick="segPick(this,'no')">No</button></div>`;
+  return lab+`<input class="in" id="${id}" ${q.type==="number"?'inputmode="decimal"':""}>`;
+}
+function segPick(b,v){ const s=b.parentElement; s.dataset.v=v; [...s.children].forEach(x=>x.classList.toggle("on",x===b)); }
+function applyForm(id){
+  const f=APPLY.forms.find(x=>x.id===id);
+  openModal(`<h2>${esc(f.icon||"📝")} ${esc(f.name)}</h2>${f.description?`<p class="mute" style="white-space:pre-wrap">${esc(f.description)}</p>`:""}
+   <div style="margin-top:8px">${f.questions.map(qField).join("")}</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:22px"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" id="asub" onclick="submitApp(${id})">Submit application</button></div>`);
+}
+async function submitApp(id){
+  const f=APPLY.forms.find(x=>x.id===id), answers={};
+  f.questions.forEach(q=>{ const k=`qa_${q.id}`; answers[q.id] = q.type==="multi"?$$(`[name="${k}"]:checked`).map(x=>x.value):q.type==="yesno"?$("#"+k).dataset.v:$("#"+k).value; });
+  $("#asub").disabled=true;
+  if(await act(()=>api("/api/apply",{form_id:id,answers}),"Application submitted — you'll get a DM when it's reviewed")){ closeModal(); history.replaceState(null,"","#apply"); pApply(); }
+  else $("#asub").disabled=false;
+}
+
+/* ───────────────────────── admin: overview / users / orgs ───────────────────────── */
+async function pOverview(){
+  const d=await api("/api/overview"); const supply=d.wallets+d.banks+d.business+d.depts; const max=Math.max(1,...d.daily.map(x=>x.s)); const c=ME.counts||{};
+  $("#main").innerHTML = head("Overview", `${esc(ME.guild.name)} at a glance`) +
+  `<div class="grid">${stat("Money supply",fmt(supply),`${d.accounts} citizens`,"coins")}${stat("In banks",fmt(d.banks),`${fmt(d.wallets)} in wallets`,"building")}
+   ${stat("Businesses",fmt(d.business),`${d.n_business} open`,"building")}${stat("Departments",fmt(d.depts),`${d.n_depts} departments`,"users")}
+   ${stat("Unpaid citations",d.unpaid_citations,`${fmt(d.unpaid_total)} outstanding`,"alert")}
+   ${ME.features.tickets?stat("Open tickets",c.tickets||0,"","ticket"):""}${ME.features.applications?stat("Pending applications",c.applications||0,"","form"):""}</div>
+  <div class="cols" style="margin-top:16px"><div class="card"><div class="card-h"><h3>Money moved · 14 days</h3></div>
+   ${d.daily.length?`<div class="bars">${d.daily.map(x=>`<div class="bar" style="height:${Math.max(2,x.s/max*100)}%" data-t="${x.d}: ${fmt(x.s)} · ${x.n} tx"></div>`).join("")}</div><div class="bl">${d.daily.map(x=>`<span>${x.d.slice(5)}</span>`).join("")}</div>`:empty("📈","No activity yet.")}</div>
+   <div class="card"><div class="card-h"><h3>Richest citizens</h3></div>${d.top.length?`<table class="tbl">${d.top.map((t,i)=>`<tr><td class="dim">${i+1}</td><td>${user(t.user)}</td><td class="b">${fmt(t.total)}</td></tr>`).join("")}</table>`:empty("🏆","Nobody yet.")}</div></div>
+  <div class="card" style="margin-top:16px"><div class="card-h"><h3>Activity by type · 7 days</h3></div>${d.kinds.length?`<table class="tbl">${d.kinds.map(k=>`<tr><td><span class="pill brand">${esc(k.kind)}</span></td><td>${k.n} transactions</td><td class="b">${fmt(k.s)}</td></tr>`).join("")}</table>`:empty("🧾","Nothing yet.")}</div>`;
+}
+async function pUsers(search=""){
+  const rows=await api("/api/users?q="+encodeURIComponent(search));
+  $("#main").innerHTML = head("Citizens", `${rows.length} accounts`) + `<div class="toolbar"><input class="in" id="us" placeholder="Search name or ID…  (Enter)" value="${esc(search)}"></div>
+  <div class="card scroll"><table class="tbl"><tr><th>Citizen</th><th>Wallet</th><th>Bank</th><th>Total</th><th>Citations</th><th></th></tr>
+  ${rows.map(r=>`<tr class="click" onclick="userModal('${r.user.id}')"><td>${user(r.user)}</td><td>${fmt(r.wallet)}</td><td>${fmt(r.bank)}</td><td class="b">${fmt(r.wallet+r.bank)}</td><td>${r.citations?`<span class="pill red">${r.citations} unpaid</span>`:""}</td><td>${r.frozen?'<span class="pill red">frozen</span>':""}</td></tr>`).join("")||`<tr><td colspan=6>${empty("👥","No accounts yet.")}</td></tr>`}</table></div>`;
+  const s=$("#us"); s.focus(); s.setSelectionRange(s.value.length,s.value.length); s.onkeydown=e=>{ if(e.key==="Enter") pUsers(s.value); };
+}
+async function userModal(uid){
+  const d=await api("/api/user/"+uid);
+  openModal(`<div class="u" style="gap:14px"><img src="${esc(d.user.avatar)}" style="width:52px;height:52px" alt=""><div><h2>${esc(d.user.name)}</h2><div class="dim">@${esc(d.user.username)} · ${d.user.id}</div></div></div>
+  <div class="grid" style="margin-top:16px">${stat("Wallet",fmt(d.wallet))}${stat("Bank",fmt(d.bank))}</div>
+  <div class="card" style="margin-top:16px"><div class="card-h"><h3>Adjust money</h3></div><div class="row"><div><label class="l">Amount</label><input class="in" id="am" placeholder="1000, 5k"></div><div><label class="l">Account</label><select class="in" id="ai"><option value="bank">Bank</option><option value="wallet">Wallet</option></select></div><div style="flex:2"><label class="l">Reason</label><input class="in" id="ar" placeholder="optional"></div></div>
+   <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn green" onclick="adj('${uid}','print')">Print money</button><button class="btn red" onclick="adj('${uid}','remove')">Remove money</button><button class="btn ghost" onclick="frz('${uid}',${!d.frozen})">${d.frozen?"Unfreeze":"Freeze"} account</button></div></div>
+  ${d.businesses.length?`<div class="card"><div class="card-h"><h3>Owns</h3></div>${d.businesses.map(b=>`<div>🏢 <b>${esc(b.name)}</b> — ${fmt(b.balance)}</div>`).join("")}</div>`:""}
+  <div class="card"><div class="card-h"><h3>Inventory</h3></div>${d.items.map(i=>`<span class="pill" style="margin:2px">${esc(i.name)} ×${i.qty}</span>`).join("")||'<span class="dim">Empty</span>'}</div>
+  <div class="card"><div class="card-h"><h3>Citations</h3></div>${citTable(d.citations,{admin:true})}</div>
+  <div class="card"><div class="card-h"><h3>History</h3></div>${ledgerTable(d.history,uid,true)}</div>`, true);
+}
+async function adj(uid,op){ const amount=$("#am").value.trim(); if(!amount) return toast("Enter an amount",false); if(await act(()=>api("/api/admin/money",{op,user:uid,amount,into:$("#ai").value,reason:$("#ar").value}),op==="print"?"Money printed":"Money removed")) userModal(uid); }
+async function frz(uid,frozen){ if(await act(()=>api("/api/admin/freeze",{user:uid,frozen}),frozen?"Frozen":"Unfrozen")) userModal(uid); }
+async function undo(id){ if(!confirm(`Reverse transaction #${id}?`)) return; let ok=await act(()=>api("/api/admin/undo",{id}),"Reversed");
+  if(!ok&&confirm("Reversal failed (probably not enough money left). Force it and allow a negative balance?")) ok=await act(()=>api("/api/admin/undo",{id,force:true}),"Reversed (forced)"); if(ok){ closeModal(); render(); } }
+async function citAct(id,action){ const note=action==="void"?prompt("Reason for voiding (optional)"):null; if(action==="void"&&note===null) return;
+  if(await act(()=>api("/api/admin/citation",{id,action,note}),action==="void"?"Voided":"Late fee waived")){ closeModal(); render(); } }
+
+async function pOrgs(){
+  const rows=await api("/api/orgs");
+  $("#main").innerHTML = head("Businesses & Departments", `${rows.length} organisations`, `<button class="btn" onclick="newOrg()">+ New</button>`) +
+  `<div class="card scroll"><table class="tbl"><tr><th>Name</th><th>Type</th><th>Owner</th><th>Balance</th><th>Items</th><th>Payroll</th></tr>
+  ${rows.map(o=>`<tr class="click" onclick="orgModal(${o.id})"><td><b>${esc(o.name)}</b><div class="dim" style="font-size:12px">${esc(o.description||"")}</div></td><td><span class="pill ${o.kind}">${o.kind==="dept"?"department":"business"}</span></td><td>${user(o.owner)}</td><td class="b">${fmt(o.balance)}</td><td>${o.items}</td><td>${o.staff} · ${fmt(o.payroll)}/cycle</td></tr>`).join("")||`<tr><td colspan=6>${empty("🏢","Nothing yet — create a department, or players open businesses with /business create.")}</td></tr>`}</table></div>`;
+}
+async function gs(){ return GS = GS || await api("/api/guild-meta"); }
+const roleOpts = async sel => opt((await gs()).roles.map(r=>({id:r.id,label:"@"+r.name})), sel);
+async function newOrg(){ const ro=await roleOpts();
+  openModal(`<h2>New business / department</h2><div class="row"><div><label class="l">Type</label><select class="in" id="ok"><option value="dept">Department</option><option value="business">Business</option></select></div><div style="flex:2"><label class="l">Name</label><input class="in" id="on"></div></div>
+   <label class="l">Description</label><input class="in" id="od"><label class="l">Owner Discord user ID (businesses)</label><input class="in" id="oo" placeholder="123456789012345678">
+   <div class="row"><div><label class="l">Head role</label><select class="in" id="oh">${ro}</select></div><div><label class="l">Member role</label><select class="in" id="om">${ro}</select></div></div>
+   <div style="margin-top:18px;text-align:right"><button class="btn" onclick="saveOrg()">Create</button></div>`); }
+async function saveOrg(){ if(await act(()=>api("/api/admin/org",{kind:$("#ok").value,name:$("#on").value,description:$("#od").value,owner:$("#oo").value,head_role:$("#oh").value,member_role:$("#om").value}),"Created")){ closeModal(); pOrgs(); } }
+let ORG=null;
+async function orgModal(id){
+  const d=ORG=await api("/api/org/"+id), o=d.org;
+  openModal(`<h2>${esc(o.name)} <span class="pill ${o.kind}">${o.kind==="dept"?"department":"business"}</span></h2><div class="mute">${esc(o.description||"")}</div>
+  <div class="grid" style="margin-top:16px">${stat("Balance",fmt(o.balance))}<div class="card"><div class="mute" style="font-size:12.5px">Owner</div><div style="margin-top:8px">${user(o.owner)}</div></div>
+   <div class="card"><div class="mute" style="font-size:12.5px">Roles</div><div style="margin-top:8px">${d.roles.map(r=>`<div><span class="pill">${r.level}</span> @${esc(r.name)}</div>`).join("")||'<span class="dim">None</span>'}</div></div></div>
+  <div class="card" style="margin-top:16px"><div class="card-h"><h3>Adjust balance</h3></div><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="in" id="oa" placeholder="Amount" style="max-width:160px"><input class="in" id="or" placeholder="Reason" style="max-width:260px"><button class="btn green" onclick="orgAdj(${o.id},'print')">Print</button><button class="btn red" onclick="orgAdj(${o.id},'remove')">Remove</button></div></div>
+  <div class="card"><div class="card-h"><h3>Items</h3><button class="btn sm" onclick="itemForm(${o.id})">+ Add item</button></div>
+   ${d.items.length?`<div class="scroll"><table class="tbl"><tr><th>Name</th><th>Price</th><th>Stock</th><th>Flags</th><th></th></tr>${d.items.map(i=>`<tr><td><b>${esc(i.name)}</b><div class="dim" style="font-size:12px">${esc(i.description||"")}</div></td><td>${fmt(i.price)}</td><td>${i.stock??"∞"}</td>
+    <td>${i.for_sale?'<span class="pill green">for sale</span>':""} ${i.consumable?'<span class="pill">consumable</span>':""} ${i.role_name?`<span class="pill brand">@${esc(i.role_name)}${i.role_days?` ${i.role_days}d`:""}</span>`:""}</td>
+    <td style="white-space:nowrap"><button class="btn ghost sm" onclick="itemForm(${o.id},${i.id})">Edit</button> <button class="btn red sm" onclick="itemDel(${o.id},${i.id})">✕</button></td></tr>`).join("")}</table></div>`:empty("📦","No items.")}</div>
+  <div class="card"><div class="card-h"><h3>Payroll</h3></div>${d.payroll.length?`<table class="tbl">${d.payroll.map(p=>`<tr><td>${user(p.user)}</td><td class="b">${fmt(p.amount)}</td><td class="dim">paid ${ago(p.last_paid)}</td><td><button class="btn red sm" onclick="payDel(${o.id},'${p.user.id}')">Remove</button></td></tr>`).join("")}</table>`:empty("💼","Nobody on payroll.")}
+   <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><input class="in" id="pu" placeholder="Discord user ID" style="max-width:220px"><input class="in" id="pa" placeholder="Pay per cycle" style="max-width:160px"><button class="btn sm" onclick="payAdd(${o.id})">Add / update</button></div></div>
+  <div class="card"><div class="card-h"><h3>Transactions</h3></div>${ledgerTable(d.history,null,true)}</div>`, true);
+}
+async function orgAdj(id,op){ const amount=$("#oa").value.trim(); if(!amount) return; if(await act(()=>api("/api/admin/money",{op,org:id,amount,reason:$("#or").value}),"Done")) orgModal(id); }
+async function itemForm(oid,iid){
+  const i=iid?ORG.items.find(x=>x.id===iid):{for_sale:ORG.org.kind==="business"?1:0,consumable:1}; const ro=await roleOpts(i.role_id);
+  openModal(`<h2>${iid?"Edit":"Add"} item — ${esc(ORG.org.name)}</h2><label class="l">Name</label><input class="in" id="in" value="${esc(i.name||"")}"><label class="l">Description</label><input class="in" id="ide" value="${esc(i.description||"")}">
+   <div class="row"><div><label class="l">Price</label><input class="in" id="ip" value="${i.price??0}"></div><div><label class="l">Stock (empty = unlimited)</label><input class="in" id="is" value="${i.stock??""}"></div></div>
+   <label class="chk"><input type="checkbox" id="ifs" ${i.for_sale?"checked":""}><span>For sale in <code>/shop</code></span></label><label class="chk"><input type="checkbox" id="ic" ${i.consumable?"checked":""}><span>Used up when used</span></label>
+   <label class="l">Message when used (<code>{user}</code> = mention)</label><input class="in" id="iu" value="${esc(i.use_message||"")}">
+   <div class="row"><div><label class="l">Gives a role when used</label><select class="in" id="ir">${ro}</select></div><div><label class="l">Role lasts (days, empty = forever)</label><input class="in" id="id" value="${i.role_days??""}"></div></div>
+   <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px"><button class="btn ghost" onclick="orgModal(${oid})">Back</button><button class="btn" onclick="itemSave(${oid},${iid||0})">Save</button></div>`);
+}
+async function itemSave(oid,iid){ const b={id:iid||null,name:$("#in").value,description:$("#ide").value,price:$("#ip").value,stock:$("#is").value,for_sale:$("#ifs").checked,consumable:$("#ic").checked,use_message:$("#iu").value,role_id:$("#ir").value,role_days:$("#id").value};
+  if(await act(()=>api(`/api/org/${oid}/item`,b),"Saved")) orgModal(oid); }
+async function itemDel(oid,iid){ if(confirm("Delete this item?")&&await act(()=>api(`/api/org/${oid}/item/delete`,{id:iid}),"Deleted")) orgModal(oid); }
+async function payAdd(oid){ if(await act(()=>api(`/api/org/${oid}/payroll`,{user:$("#pu").value.trim(),amount:$("#pa").value.trim()}),"Payroll saved")) orgModal(oid); }
+async function payDel(oid,uid){ if(await act(()=>api(`/api/org/${oid}/payroll`,{user:uid,remove:true}),"Removed")) orgModal(oid); }
+
+async function pCitations(status="unpaid"){
+  const rows=await api("/api/citations?status="+status);
+  $("#main").innerHTML = head("Citations", `${fmt(rows.filter(r=>r.status==="unpaid").reduce((a,r)=>a+r.amount+r.late_fee,0))} outstanding`, seg(["unpaid","paid","void","all"],status,"pCitations")) + `<div class="card">${citTable(rows,{who:true,admin:true})}</div>`;
+}
+let LEDGER=[];
+async function pLedger(more=false){
+  const kind=$("#lk")?.value||""; const before=more&&LEDGER.length?LEDGER[LEDGER.length-1].id:0;
+  const rows=await api(`/api/ledger?kind=${encodeURIComponent(kind)}&before=${before}`); LEDGER=more?LEDGER.concat(rows):rows;
+  const kinds=["","pay","deposit","withdraw","purchase","tax","payroll","citation","org_deposit","org_withdraw","org_transfer","admin_print","admin_remove","interest","undo","start","business_fee","org_close"];
+  $("#main").innerHTML = head("Transactions","Every money movement, with one-click undo.",`<select class="in" id="lk" style="width:220px" onchange="pLedger()">${kinds.map(k=>`<option value="${k}" ${k===kind?"selected":""}>${k||"All types"}</option>`).join("")}</select>`) +
+   `<div class="card">${ledgerTable(LEDGER,null,true)}${rows.length===100?`<p style="text-align:center"><button class="btn ghost" onclick="pLedger(true)">Load more</button></p>`:""}</div>`;
+}
+
+/* ───────────────────────── tickets ───────────────────────── */
+async function pTickets(status="open"){
+  const rows=await api("/api/tickets?status="+status);
+  $("#main").innerHTML = head("Tickets","Support tickets opened from the Discord panel.", seg(["open","closed","all"],status,"pTickets")+`<button class="btn ghost" onclick="postPanel('tickets')">${I("send")} Refresh Discord panel</button>`) +
+  `<div class="card scroll"><table class="tbl"><tr><th>#</th><th>Category</th><th>Opened by</th><th>Subject</th><th>Claimed</th><th>Status</th><th>Opened</th></tr>
+  ${rows.map(t=>`<tr class="click" onclick="ticketModal(${t.id})"><td class="dim mono">#${t.id}</td><td><span class="pill brand">${esc(t.category)}</span></td><td>${user(t.user)}</td><td class="mute">${esc((t.subject||"").slice(0,80))}</td><td>${t.claimed?user(t.claimed):'<span class="dim">—</span>'}</td><td><span class="pill ${t.status==="open"?"green":""}">${t.status}</span></td><td class="dim">${ago(t.created_at)}</td></tr>`).join("")||`<tr><td colspan=7>${empty("🎫",status==="open"?"No open tickets. 🎉":"No tickets.")}</td></tr>`}</table></div>`;
+  const m=/^#ticket-(\d+)/.exec(location.hash); if(m){ history.replaceState(null,"","#tickets"); ticketModal(+m[1]); }
+}
+let TICKET=null;
+async function ticketModal(id){
+  const t=TICKET=await api("/api/tickets/"+id);
+  const lines=(t.transcript||"").split("\n").filter(Boolean).map(l=>{ const m=/^\[(.+?)\] (.+?) \((\d+)\)( \[bot\])?: ([\s\S]*)$/.exec(l); return m?`<div style="padding:9px 0;border-bottom:1px solid var(--line)"><span class="dim mono" style="font-size:11.5px">${esc(m[1])}</span> <b style="color:${m[4]?"var(--brand)":"#fff"}">${esc(m[2])}</b><div style="white-space:pre-wrap;margin-top:2px">${esc(m[5])}</div></div>`:`<div style="white-space:pre-wrap">${esc(l)}</div>`; }).join("");
+  openModal(`<h2>Ticket #${t.id} · ${esc(t.category)}</h2><div class="mute" style="margin-bottom:12px">${user(t.user)} · opened ${dtx(t.created_at)}${t.closed_at?` · closed ${dtx(t.closed_at)}`:""}</div>
+   ${t.subject?`<div class="card" style="margin-bottom:14px;white-space:pre-wrap">${esc(t.subject)}</div>`:""}${t.close_reason?`<p class="mute">Close reason: ${esc(t.close_reason)}</p>`:""}
+   <div class="card"><div class="card-h"><h3>Transcript</h3>${t.transcript?`<button class="btn ghost sm" onclick="dl('ticket-${t.id}.txt', TICKET.transcript)">Download</button>`:""}</div>${lines||empty("💬",t.status==="open"?"The transcript is saved when the ticket is closed.":"No messages.")}</div>`, true);
+}
+function dl(name, text){ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type:"text/plain"})); a.download=name; a.click(); }
+async function postPanel(which, isNew){ await act(()=>api("/api/panel/post",{which,new:!!isNew}),"Panel posted in Discord"); }
+
+/* ───────────────────────── applications (admin) ───────────────────────── */
+let APPS=[], FORMS=[];
+async function pApplications(status="pending"){
+  [APPS, FORMS] = await Promise.all([api("/api/applications?status="+status), api("/api/forms")]);
+  $("#main").innerHTML = head("Applications","Review applicants and build application forms.", `<button class="btn ghost" onclick="postPanel('applications')">${I("send")} Refresh Discord panel</button><button class="btn" onclick="formEditor()">+ New form</button>`) +
+  `<div class="card"><div class="card-h"><h3>Forms</h3></div>${FORMS.length?`<div class="scroll"><table class="tbl"><tr><th>Form</th><th>Questions</th><th>Requirements</th><th>Status</th><th>Pending</th><th></th></tr>${FORMS.map(f=>`<tr><td><b>${esc(f.icon||"📝")} ${esc(f.name)}</b></td><td>${f.questions.length}</td>
+    <td class="mute" style="font-size:12.5px">${reqSummary(f.requirements)}</td><td><span class="pill ${f.is_open?"green":"red"}">${f.is_open?"open":"closed"}</span></td><td>${f.pending?`<span class="badge">${f.pending}</span>`:"—"}</td>
+    <td style="white-space:nowrap"><button class="btn ghost sm" onclick="formEditor(${f.id})">Edit</button> <button class="btn red sm" onclick="formDel(${f.id})">✕</button></td></tr>`).join("")}</table></div>`:empty("📝","No forms yet — create one, e.g. “LSPD Application”.")}</div>
+  <div class="card"><div class="card-h"><h3>Submissions</h3>${seg(["pending","accepted","denied","all"],status,"pApplications")}</div>
+   ${APPS.length?`<div class="scroll"><table class="tbl"><tr><th>#</th><th>Applicant</th><th>Form</th><th>Status</th><th>Submitted</th><th>Reviewer</th></tr>${APPS.map(a=>`<tr class="click" onclick="appModal(${a.id})"><td class="dim mono">#${a.id}</td><td>${user(a.user)}</td><td class="b">${esc(a.form)}</td><td><span class="pill ${a.status==="accepted"?"green":a.status==="denied"?"red":"gold"}">${a.status}</span></td><td class="dim">${ago(a.created_at)}</td><td>${a.reviewer?user(a.reviewer):'<span class="dim">—</span>'}</td></tr>`).join("")}</table></div>`:empty("📭","Nothing here.")}</div>`;
+}
+function reqSummary(r){ const o=[]; if(r.roles_required?.length) o.push(`${r.roles_required.length} required role(s)`); if(r.roles_blocked?.length) o.push(`${r.roles_blocked.length} blocked role(s)`);
+  if(r.min_account_days) o.push(`account ${r.min_account_days}d+`); if(r.min_member_days) o.push(`member ${r.min_member_days}d+`); if(r.docs_ack) o.push("read docs"); if(r.no_unpaid_citations) o.push("no unpaid fines"); if(r.custom?.length) o.push(`${r.custom.length} custom`); return o.join(" · ")||"None"; }
+function appModal(id){
+  const a=APPS.find(x=>x.id===id);
+  openModal(`<h2>${esc(a.form)} · #${a.id}</h2><div class="mute" style="margin-bottom:14px">${user(a.user)} · submitted ${dtx(a.created_at)}</div>
+   ${a.answers.map(x=>`<div class="card" style="padding:14px"><div class="dim" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">${esc(x.label)}</div><div style="white-space:pre-wrap;margin-top:4px">${esc(Array.isArray(x.answer)?x.answer.join(", "):(x.answer||"—"))}</div></div>`).join("")}
+   ${a.status==="pending"?`<label class="l">Note to the applicant (optional — sent in their DM)</label><textarea class="in" id="arsn" rows="3"></textarea>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="btn red" onclick="decide(${a.id},false)">Deny</button><button class="btn green" onclick="decide(${a.id},true)">Accept & give roles</button></div>`
+   :`<p class="mute">${a.status==="accepted"?"✅ Accepted":"❌ Denied"} ${a.reviewer?`by ${esc(a.reviewer.name)}`:""} ${ago(a.decided_at)}${a.reason?` — “${esc(a.reason)}”`:""}</p>`}`, true);
+}
+async function decide(id, accept){ const r=await act(()=>api("/api/applications/decide",{id,accept,reason:$("#arsn").value})); if(r){ toast((accept?"Accepted":"Denied")+(r.note?" — "+r.note:"")); closeModal(); pApplications(); } }
+async function formDel(id){ if(confirm("Delete this form? Past submissions are kept.")&&await act(()=>api(`/api/forms/${id}/delete`,{}),"Deleted")) pApplications(); }
+
+/* role chips picker */
+function rolePicker(id, selected){
+  const roles=GS.roles; const sel=new Set((selected||[]).map(String));
+  return `<div id="${id}" data-v="${[...sel].join(",")}"><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${sel.size?6:0}px">${[...sel].map(r=>{const x=roles.find(y=>y.id===r);return `<span class="pill brand">@${esc(x?x.name:r)} <a href="#" onclick="rpDel(event,'${id}','${r}')" style="color:inherit;text-decoration:none">×</a></span>`}).join("")}</div>
+   <select class="in" onchange="rpAdd('${id}',this.value)"><option value="">+ Add role…</option>${roles.filter(r=>!sel.has(r.id)).map(r=>`<option value="${r.id}">@${esc(r.name)}</option>`).join("")}</select></div>`;
+}
+const rpVal = id => ($("#"+id)?.dataset.v||"").split(",").filter(Boolean);
+function rpAdd(id,v){ if(!v) return; $("#"+id).outerHTML=rolePicker(id,[...rpVal(id),v]); }
+function rpDel(e,id,v){ e.preventDefault(); $("#"+id).outerHTML=rolePicker(id,rpVal(id).filter(x=>x!==v)); }
+
+let FQ=[];
+async function formEditor(id){
+  await gs(); const f = id ? FORMS.find(x=>x.id===id) : {name:"",icon:"📝",description:"",is_open:true,questions:[{id:"q0",label:"What is your in-game name?",type:"short",required:true,options:[]},{id:"q1",label:"How old are you?",type:"number",required:true,options:[]},{id:"q2",label:"Why do you want to join?",type:"paragraph",required:true,options:[]},{id:"q3",label:"Have you read the SOP?",type:"yesno",required:true,options:[]}],requirements:{},reviewer_roles:[],accept_roles:[],remove_roles:[],cooldown_days:7};
+  FQ = JSON.parse(JSON.stringify(f.questions)); const r=f.requirements||{};
+  const chs=GS.channels.map(c=>({id:c.id,label:"#"+c.name+(c.cat?`  ·  ${c.cat}`:"")}));
+  openModal(`<h2>${id?"Edit":"New"} application form</h2>
+   <div class="row"><div style="max-width:90px;min-width:80px"><label class="l">Icon</label><input class="in" id="fi" value="${esc(f.icon||"")}"></div><div style="flex:3"><label class="l">Name</label><input class="in" id="fn" value="${esc(f.name)}" placeholder="LSPD Application"></div></div>
+   <label class="l">Description / intro</label><textarea class="in" id="fd" rows="3">${esc(f.description||"")}</textarea>
+   <label class="chk"><input type="checkbox" id="fo" ${f.is_open?"checked":""}><span><b>Open for applications</b></span></label>
+   <div class="card" style="margin-top:14px"><div class="card-h"><h3>Questions</h3><button class="btn sm" onclick="fqAdd()">+ Question</button></div><div id="fqs"></div></div>
+   <div class="card"><div class="card-h"><h3>Requirements</h3></div>
+    <div class="row"><div><label class="l">Must have ANY of these roles</label>${rolePicker("rq_req",r.roles_required)}</div><div><label class="l">Must NOT have these roles</label>${rolePicker("rq_blk",r.roles_blocked)}</div></div>
+    <div class="row"><div><label class="l">Discord account at least (days)</label><input class="in" id="rq_acc" type="number" min="0" value="${r.min_account_days||0}"></div><div><label class="l">In the server at least (days)</label><input class="in" id="rq_mem" type="number" min="0" value="${r.min_member_days||0}"></div><div><label class="l">Wait after denial (days)</label><input class="in" id="fcd" type="number" min="0" value="${f.cooldown_days??7}"></div></div>
+    <label class="chk"><input type="checkbox" id="rq_doc" ${r.docs_ack?"checked":""}><span>Must have acknowledged the server documents<small>Uses the “I have read the documents” role from Server setup</small></span></label>
+    <label class="chk"><input type="checkbox" id="rq_cit" ${r.no_unpaid_citations?"checked":""}><span>No unpaid citations</span></label>
+    <label class="l">Other requirements shown to applicants (one per line, checked by staff)</label><textarea class="in" id="rq_cus" rows="2" placeholder="Must be 16+&#10;Working microphone">${esc((r.custom||[]).join("\n"))}</textarea></div>
+   <div class="card"><div class="card-h"><h3>Review & result</h3></div>
+    <label class="l">Post submissions in</label><select class="in" id="frc">${opt(chs,f.review_channel,"— log channel —")}</select>
+    <label class="l">Who can review (besides admins)</label>${rolePicker("fr_rev",f.reviewer_roles)}
+    <div class="row"><div><label class="l">On accept: give roles</label>${rolePicker("fr_acc",f.accept_roles)}</div><div><label class="l">On accept: remove roles</label>${rolePicker("fr_rem",f.remove_roles)}</div></div>
+    <label class="l">Message sent to accepted applicants</label><textarea class="in" id="fam" rows="2" placeholder="Welcome to LSPD! Report to #training for your ride-along.">${esc(f.accept_message||"")}</textarea></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="formSave(${id||0})">Save form</button></div>`, true);
+  fqDraw();
+}
+function fqDraw(){
+  $("#fqs").innerHTML = FQ.map((q,i)=>`<div class="card" style="padding:14px;margin-top:10px;background:var(--glass3);box-shadow:none"><div class="fq-head" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span class="dim mono">${i+1}</span><input class="in" style="flex:1;min-width:200px" value="${esc(q.label)}" oninput="FQ[${i}].label=this.value" placeholder="Question">
+    <select class="in" style="width:150px" onchange="FQ[${i}].type=this.value;fqDraw()">${[["short","Short answer"],["paragraph","Paragraph"],["choice","Dropdown"],["multi","Checkboxes"],["yesno","Yes / No"],["number","Number"]].map(([v,l])=>`<option value="${v}" ${q.type===v?"selected":""}>${l}</option>`).join("")}</select>
+    <label class="chk" style="margin:0"><input type="checkbox" ${q.required?"checked":""} onchange="FQ[${i}].required=this.checked"><span>Required</span></label>
+    <button class="btn ghost sm" onclick="fqMove(${i},-1)">↑</button><button class="btn ghost sm" onclick="fqMove(${i},1)">↓</button><button class="btn red sm" onclick="FQ.splice(${i},1);fqDraw()">✕</button></div>
+    <input class="in" style="margin-top:8px" value="${esc(q.help||"")}" oninput="FQ[${i}].help=this.value" placeholder="Help text (optional)">
+    ${["choice","multi"].includes(q.type)?`<textarea class="in" style="margin-top:8px" rows="3" oninput="FQ[${i}].options=this.value.split('\\n')" placeholder="One option per line">${esc((q.options||[]).join("\n"))}</textarea>`:""}</div>`).join("") || empty("❓","No questions yet.");
+}
+function fqAdd(){ FQ.push({id:"q"+Date.now().toString(36),label:"",type:"short",required:true,options:[]}); fqDraw(); }
+function fqMove(i,d){ const j=i+d; if(j<0||j>=FQ.length) return; [FQ[i],FQ[j]]=[FQ[j],FQ[i]]; fqDraw(); }
+async function formSave(id){
+  const b={id,name:$("#fn").value,icon:$("#fi").value,description:$("#fd").value,is_open:$("#fo").checked,questions:FQ,cooldown_days:$("#fcd").value,
+    requirements:{roles_required:rpVal("rq_req"),roles_blocked:rpVal("rq_blk"),min_account_days:$("#rq_acc").value,min_member_days:$("#rq_mem").value,docs_ack:$("#rq_doc").checked,no_unpaid_citations:$("#rq_cit").checked,custom:$("#rq_cus").value.split("\n")},
+    review_channel:$("#frc").value,reviewer_roles:rpVal("fr_rev"),accept_roles:rpVal("fr_acc"),remove_roles:rpVal("fr_rem"),accept_message:$("#fam").value};
+  if(await act(()=>api("/api/forms",b),"Form saved")){ closeModal(); pApplications(); }
+}
+
+/* ───────────────────────── document builder ───────────────────────── */
+let DOCS=[];
+async function pDocBuilder(){
+  DOCS=await api("/api/docs");
+  $("#main").innerHTML = head("Document builder","Write SOPs, rules and guides, or import them from Google Docs.", `<button class="btn ghost" onclick="postPanel('documents')">${I("send")} Refresh Discord panel</button><a class="btn ghost" href="/docs" target="_blank">${I("ext")} View site</a><button class="btn" onclick="docEditor()">+ New document</button>`) +
+  `<div class="card">${DOCS.length?`<div class="scroll"><table class="tbl"><tr><th>Order</th><th>Document</th><th>Category</th><th>Visibility</th><th>Updated</th><th></th></tr>${DOCS.map((d,i)=>`<tr>
+    <td style="white-space:nowrap"><button class="btn ghost sm" onclick="docMove(${i},-1)">↑</button> <button class="btn ghost sm" onclick="docMove(${i},1)">↓</button></td>
+    <td><b>${esc(d.icon||"📄")} ${esc(d.title)}</b> ${d.kind==="link"?'<span class="pill">link</span>':""} ${d.in_panel?"":'<span class="pill">not in Discord panel</span>'}<div class="dim" style="font-size:12px">${d.kind==="link"?esc(d.url):"/docs/"+esc(d.slug)}</div></td>
+    <td>${esc(d.category||"General")}</td><td><span class="pill ${d.visibility==="public"?"green":d.visibility==="staff"?"gold":"brand"}">${d.visibility}</span></td><td class="dim">${ago(d.updated_at)}</td>
+    <td style="white-space:nowrap">${d.kind==="page"?`<a class="btn ghost sm" href="/docs/${esc(d.slug)}" target="_blank">View</a> `:""}<button class="btn ghost sm" onclick="docEditor(${d.id})">Edit</button> <button class="btn red sm" onclick="docDel(${d.id})">✕</button></td></tr>`).join("")}</table></div>`:empty("📚","No documents yet. Create one or import a Google Doc.")}</div>`;
+  const m=/^#doc-edit-(\d+)/.exec(location.hash); if(m){ history.replaceState(null,"","#docbuilder"); docEditor(+m[1]); }
+}
+async function docMove(i,d){ const j=i+d; if(j<0||j>=DOCS.length) return; [DOCS[i],DOCS[j]]=[DOCS[j],DOCS[i]]; await act(()=>api("/api/docs/order",{ids:DOCS.map(x=>x.id)})); pDocBuilder(); }
+async function docDel(id){ const d=DOCS.find(x=>x.id===id); if(confirm(`Delete “${d?d.title:"this document"}”? This can't be undone.`)&&await act(()=>api(`/api/docs/${id}/delete`,{}),"Deleted")){ closeModal(); pDocBuilder(); } }
+const TB = [["undo","↶","Undo"],["redo","↷","Redo"],"|",["h1","H1","Big heading"],["h2","H2","Heading"],["h3","H3","Sub-heading"],["p","¶","Normal text"],"|",["bold","<b>B</b>","Bold"],["italic","<i>I</i>","Italic"],["underline","<u>U</u>","Underline"],["strikeThrough","<s>S</s>","Strike"],["mark","🖍","Highlight"],"|",
+  ["insertUnorderedList","• List","Bullet list"],["insertOrderedList","1. List","Numbered list"],["quote","❝","Quote"],"|",["link","🔗","Link"],["image","🖼","Image"],["table","▦","Table"],["hr","―","Divider"],"|",["callout-info","ℹ️","Info box"],["callout-warn","⚠️","Warning box"],["callout-danger","⛔","Danger box"],["callout-ok","✅","Success box"],"|",["removeFormat","⌫","Clear formatting"]];
+async function docEditor(id){
+  const d = id ? await api("/api/docs/"+id) : {title:"",icon:"📄",category:"",summary:"",visibility:"public",kind:"page",in_panel:1,content:""};
+  openModal(`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-right:44px"><h2>${id?"Edit document":"New document"}</h2>
+   <button class="btn ghost sm" onclick="docImport()">⬇ Import from Google Docs / Sheets</button></div>
+   <div class="row" style="margin-top:6px"><div style="max-width:90px;min-width:80px"><label class="l">Icon</label><input class="in" id="dic" value="${esc(d.icon||"")}"></div><div style="flex:3"><label class="l">Title</label><input class="in" id="dti" value="${esc(d.title)}" placeholder="Department SOP"></div>
+    <div><label class="l">Category</label><input class="in" id="dca" value="${esc(d.category||"")}" placeholder="Law Enforcement" list="dcats"><datalist id="dcats">${[...new Set(DOCS.map(x=>x.category).filter(Boolean))].map(c=>`<option>${esc(c)}</option>`).join("")}</datalist></div></div>
+   <label class="l">Short summary (shown on cards and in Discord)</label><input class="in" id="dsu" value="${esc(d.summary||"")}">
+   <div class="row"><div><label class="l">Who can read it</label><select class="in" id="dvi"><option value="public" ${d.visibility==="public"?"selected":""}>Everyone (public link)</option><option value="members" ${d.visibility==="members"?"selected":""}>Server members (Discord login)</option><option value="staff" ${d.visibility==="staff"?"selected":""}>Staff only</option></select></div>
+    <div><label class="l">Type</label><select class="in" id="dki" onchange="$('#dlink').style.display=this.value==='link'?'':'none'"><option value="page" ${d.kind==="page"?"selected":""}>Page (written here)</option><option value="link" ${d.kind==="link"?"selected":""}>Link to another website</option></select></div>
+    <div style="display:flex;align-items:flex-end"><label class="chk"><input type="checkbox" id="dpa" ${d.in_panel?"checked":""}><span>Show in Discord documents panel</span></label></div></div>
+   <div id="dlink" style="display:${d.kind==="link"?"":"none"}"><label class="l">Link URL</label><input class="in" id="dur" value="${esc(d.url||"")}" placeholder="https://…"></div>
+   <div class="editor-wrap" style="margin-top:16px"><div class="etools">${TB.map(t=>t==="|"?'<span class="sep"></span>':`<button type="button" title="${t[2]}" onmousedown="event.preventDefault()" onclick="ed('${t[0]}')">${t[1]}</button>`).join("")}</div>
+    <div class="editor prose" id="ed" contenteditable="true" style="border:0;border-radius:0;background:transparent;backdrop-filter:none">${d.content||""}</div></div>
+   <input type="hidden" id="dsrc" value="${esc(d.source_url||"")}">
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:18px;flex-wrap:wrap"><div>${id?`<button class="btn red" onclick="docDel(${id})">Delete</button>`:""}</div>
+    <div style="display:flex;gap:8px">${id&&d.kind==="page"?`<a class="btn ghost" href="/docs/${esc(d.slug)}" target="_blank">Preview</a>`:""}<button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="docSave(${id||0})">Save & publish</button></div></div>`, true);
+  $("#ed").addEventListener("paste", e=>{ const h=e.clipboardData.getData("text/html"); if(!h) return; e.preventDefault(); document.execCommand("insertHTML",false,h.replace(/<(script|style)[\s\S]*?<\/\1>/gi,"").replace(/ (style|class)="[^"]*"/gi,"")); });
+}
+function ed(cmd){
+  const E=$("#ed"); E.focus();
+  if(["h1","h2","h3","p"].includes(cmd)) return document.execCommand("formatBlock",false,cmd.toUpperCase());
+  if(cmd==="quote") return document.execCommand("formatBlock",false,"BLOCKQUOTE");
+  if(cmd==="mark"){ const s=getSelection().toString(); return s&&document.execCommand("insertHTML",false,`<mark>${esc(s)}</mark>`); }
+  if(cmd==="link"){ const u=prompt("Link address (https://…)"); return u&&document.execCommand("createLink",false,u); }
+  if(cmd==="hr") return document.execCommand("insertHTML",false,"<hr><p><br></p>");
+  if(cmd==="table"){ const r=+prompt("How many rows?",4)||0, c=+prompt("How many columns?",3)||0; if(!r||!c) return;
+    return document.execCommand("insertHTML",false,`<table><thead><tr>${"<th>Heading</th>".repeat(c)}</tr></thead><tbody>${`<tr>${"<td>&nbsp;</td>".repeat(c)}</tr>`.repeat(Math.max(1,r-1))}</tbody></table><p><br></p>`); }
+  if(cmd==="image"){ const i=document.createElement("input"); i.type="file"; i.accept="image/*"; i.onchange=()=>{ const f=i.files[0]; if(!f) return; if(f.size>2.5e6) return toast("Image must be under 2.5 MB",false);
+    const rd=new FileReader(); rd.onload=()=>{ E.focus(); document.execCommand("insertHTML",false,`<img src="${rd.result}" alt=""><p><br></p>`); }; rd.readAsDataURL(f); }; return i.click(); }
+  if(cmd.startsWith("callout-")){ const s=getSelection().toString()||"Write something important here."; return document.execCommand("insertHTML",false,`<div class="callout ${cmd}">${esc(s)}</div><p><br></p>`); }
+  document.execCommand(cmd,false,null);
+}
+async function docImport(){
+  const url=prompt("Paste a Google Docs or Google Sheets link (sharing must be “Anyone with the link”):"); if(!url) return;
+  toast("Importing…");
+  const r=await act(()=>api("/api/docs/import",{url})); if(!r) return;
+  if(!$("#dti").value) $("#dti").value=r.title;
+  if(!$("#ed").textContent.trim() || confirm("Replace the current content with the imported document?")) $("#ed").innerHTML=r.content;
+  $("#dsrc").value=r.source_url; toast("Imported — review it, then Save & publish");
+}
+async function docSave(id){
+  const b={id,title:$("#dti").value,icon:$("#dic").value,category:$("#dca").value,summary:$("#dsu").value,visibility:$("#dvi").value,kind:$("#dki").value,url:$("#dur").value,in_panel:$("#dpa").checked,content:$("#ed").innerHTML,source_url:$("#dsrc").value};
+  const r=await act(()=>api("/api/docs",b),"Saved & published"); if(r){ closeModal(); pDocBuilder(); }
+}
+
+/* ───────────────────────── server setup ───────────────────────── */
+let TT=[];
+async function pSetup(){
+  const g=GS=await api("/api/guild-setup"), c=g.config, f=g.features;
+  const chs=g.channels.map(x=>({id:x.id,label:"#"+x.name+(x.cat?`  ·  ${x.cat}`:"")})), cats=g.categories.map(x=>({id:x.id,label:x.name})), roles=g.roles.map(r=>({id:r.id,label:"@"+r.name}));
+  const welcome = !ME.onboarded ? `<div class="hero"><img src="/brand/logo" alt=""><div><h2>Let's finish setting up</h2><p>Pick the features you want, choose channels from the dropdowns and press <b>Save setup</b>. The bot posts its panels in Discord automatically.</p></div></div>` : "";
+  const missing = ["docs_channel","ticket_panel_channel","apps_channel","log_channel"].filter(k=>!c[k]).length;
+  const quick = missing ? `<div class="card" style="border-color:rgba(var(--brand-rgb),.5);margin-bottom:16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap"><div style="font-size:30px">⚡</div><div style="flex:1;min-width:240px"><b>Quick setup</b><div class="mute">Create a category with <b>#documents</b>, <b>#support</b>, <b>#applications</b>, private <b>#bot-logs</b> & <b>#ticket-transcripts</b>, a <b>Tickets</b> category and a <b>“Read the documents”</b> role — then post all the panels. Anything you've already picked is kept.</div></div><button class="btn" id="qbtn" onclick="autoCreate()">Create channels for me</button></div>` : "";
+  const warn = (g.role_problems||[]).length || g.bot_top_role<=1 ? `<div class="card" style="border-color:rgba(251,191,36,.5);margin-bottom:16px">⚠️ <b>Move the bot's role up.</b> In Discord → Server Settings → Roles, drag <b>${esc(ME.guild.name?"the bot's role":"the bot role")}</b> above every role it should give out${(g.role_problems||[]).length?` (it's currently below: ${g.role_problems.map(esc).join(", ")})`:""} — otherwise it can't hand out the documents, application or item roles.</div>` : "";
+  $("#main").innerHTML = head("Server setup","Features, channels, roles and branding — everything the bot posts in Discord.") + welcome + quick + warn + `
+  <div class="card"><div class="card-h"><h3>Features</h3><span class="dim" style="font-size:12px">Click to switch on/off · changing features restarts the bot</span></div>
+   <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">${Object.entries(g.feature_info).map(([k,v])=>`<div class="feat ${f[k]?"on":""}" data-f="${k}" onclick="this.classList.toggle('on')"><div class="t"><b>${esc(v.name)}</b><small>${esc(v.cmds)}</small></div><div class="switch"></div></div>`).join("")}</div></div>
+  <div class="cols" style="margin-top:16px">
+   <div class="card"><div class="card-h"><h3>📝 Logs</h3></div>
+    <label class="l">Log channel (money, staff actions)</label><select class="in" data-k="log_channel">${opt(chs,c.log_channel,"— none —")}</select>
+    <p class="dim" style="font-size:12px;margin-top:12px">Who can use the staff area is set on <a href="#staff" onclick="go('staff');return false">Staff access</a>.</p></div>
+   <div class="card"><div class="card-h"><h3>📚 Documents panel</h3><button class="btn ghost sm" onclick="postPanel('documents',true)">Post new copy</button></div>
+    <label class="l">Post the documents panel in</label><select class="in" data-k="docs_channel">${opt(chs,c.docs_channel,"— don't post —")}</select>
+    <label class="l">“I have read the documents” button gives role</label><select class="in" data-k="docs_ack_role">${opt(roles,c.docs_ack_role,"— no button —")}</select>
+    <label class="l">Panel title</label><input class="in" data-k="docs_title" value="${esc(c.docs_title)}"><label class="l">Panel text</label><textarea class="in" data-k="docs_text" rows="3">${esc(c.docs_text)}</textarea></div>
+   <div class="card"><div class="card-h"><h3>🎫 Tickets</h3><button class="btn ghost sm" onclick="postPanel('tickets',true)">Post new copy</button></div>
+    <label class="l">Post the ticket panel in</label><select class="in" data-k="ticket_panel_channel">${opt(chs,c.ticket_panel_channel,"— don't post —")}</select>
+    <div class="row"><div><label class="l">Open tickets under category</label><select class="in" data-k="ticket_category">${opt(cats,c.ticket_category,"— no category —")}</select></div><div style="max-width:140px;min-width:120px"><label class="l">Max open / user</label><input class="in" type="number" min="1" max="10" data-k="ticket_max_open" value="${c.ticket_max_open}"></div></div>
+    <label class="l">Transcripts & ticket logs go to</label><select class="in" data-k="ticket_log_channel">${opt(chs,c.ticket_log_channel,"— log channel —")}</select>
+    <label class="l">Support staff roles</label>${rolePicker("tstaff",c.ticket_staff_roles)}
+    <label class="l">Panel title</label><input class="in" data-k="ticket_panel_title" value="${esc(c.ticket_panel_title)}"><label class="l">Panel text</label><textarea class="in" data-k="ticket_panel_text" rows="2">${esc(c.ticket_panel_text)}</textarea>
+    <label class="l">Ticket types</label><div id="ttypes"></div><button class="btn ghost sm" style="margin-top:8px" onclick="TT.push({name:'',emoji:'🎫',description:''});ttDraw()">+ Add type</button></div>
+   <div class="card"><div class="card-h"><h3>📝 Applications panel</h3><button class="btn ghost sm" onclick="postPanel('applications',true)">Post new copy</button></div>
+    <label class="l">Post the applications panel in</label><select class="in" data-k="apps_channel">${opt(chs,c.apps_channel,"— don't post —")}</select>
+    <label class="l">Panel title</label><input class="in" data-k="apps_title" value="${esc(c.apps_title)}"><label class="l">Panel text</label><textarea class="in" data-k="apps_text" rows="3">${esc(c.apps_text)}</textarea>
+    <p class="dim" style="font-size:12px">Build the forms under <a href="#applications" onclick="go('applications');return false">Applications</a>.</p></div>
+   <div class="card"><div class="card-h"><h3>🎨 Branding</h3></div>
+    <div style="display:flex;gap:16px;align-items:center"><img src="/brand/logo?${Date.now()}" style="width:72px;height:72px;border-radius:50%;box-shadow:0 0 0 2px rgba(var(--brand-rgb),.4)" alt=""><div><button class="btn ghost sm" onclick="upLogo()">Upload new logo</button><div class="dim" style="font-size:12px;margin-top:6px">Used for the panel, background and documents site.</div></div></div>
+    <div class="row"><div><label class="l">Short name</label><input class="in" data-k="brand_name" value="${esc(c.brand_name)}"></div><div style="max-width:130px;min-width:110px"><label class="l">Colour</label><input class="in" type="color" data-k="brand_color" value="${esc(c.brand_color)}" style="height:42px;padding:4px"></div></div>
+    <label class="l">Full name</label><input class="in" data-k="brand_full" value="${esc(c.brand_full)}"></div>
+  </div>
+  <div class="sticky-save" style="position:sticky;bottom:16px;margin-top:18px;display:flex;justify-content:flex-end;z-index:5"><button class="btn" style="padding:12px 26px;font-size:15px;box-shadow:0 10px 30px -8px rgba(var(--brand-rgb),.7)" onclick="saveSetup()">Save setup</button></div>`;
+  TT=JSON.parse(JSON.stringify(c.ticket_types||[])); ttDraw();
+}
+async function autoCreate(){
+  $("#qbtn").disabled=true; $("#qbtn").textContent="Creating…";
+  const r=await act(()=>api("/api/guild-setup/autocreate",{}));
+  if(r){ const errs=Object.entries(r.panel_errors||{}); toast(errs.length?"Channels created, but: "+errs.map(e=>e.join(": ")).join("; "):`Done — created ${r.made.length} things and posted the panels`, !errs.length); GS=null; pSetup(); }
+  else { $("#qbtn").disabled=false; $("#qbtn").textContent="Create channels for me"; }
+}
+function ttDraw(){ $("#ttypes").innerHTML=TT.map((t,i)=>`<div class="tt-row" style="display:flex;gap:6px;margin-top:8px"><input class="in tt-emoji" style="width:58px" value="${esc(t.emoji)}" oninput="TT[${i}].emoji=this.value"><input class="in tt-name" style="flex:1" value="${esc(t.name)}" placeholder="Name" oninput="TT[${i}].name=this.value"><input class="in tt-desc" style="flex:2" value="${esc(t.description)}" placeholder="Description" oninput="TT[${i}].description=this.value"><button class="btn red sm" onclick="TT.splice(${i},1);ttDraw()">✕</button></div>`).join(""); }
+function upLogo(){ const i=document.createElement("input"); i.type="file"; i.accept="image/png,image/jpeg,image/webp"; i.onchange=()=>{ const rd=new FileReader(); rd.onload=async()=>{ if(await act(()=>api("/api/brand/logo",{data:rd.result}),"Logo updated")) location.reload(); }; rd.readAsDataURL(i.files[0]); }; i.click(); }
+async function saveSetup(){
+  const b={features:{},ticket_types:TT,ticket_staff_roles:rpVal("tstaff"),onboarded:true};
+  $$("[data-f]").forEach(e=>b.features[e.dataset.f]=e.classList.contains("on"));
+  $$("[data-k]").forEach(e=>b[e.dataset.k]=e.value);
+  const r=await act(()=>api("/api/guild-setup",b));
+  if(!r) return;
+  ME.onboarded=true; applyBrand({name:b.brand_name,full:b.brand_full,color:b.brand_color});
+  const errs=Object.entries(r.panel_errors||{}).filter(([k,v])=>!/No .* channel set/.test(v));
+  toast(r.restarting?"Saved — bot is restarting with the new features…":errs.length?`Saved, but: ${errs.map(e=>e.join(": ")).join("; ")}`:"Saved — Discord panels updated", !errs.length);
+  if(r.restarting) setTimeout(()=>location.reload(), 7000);
+}
+
+/* ───────────────────────── staff access ───────────────────────── */
+let STAFF=null;
+async function pStaff(){
+  STAFF = await api("/api/staff"); await gs();
+  const S=STAFF;
+  $("#main").innerHTML = head("Staff access","Only the people below can open the staff area — on the web panel and in the bot's staff commands.", `<button class="btn" onclick="rankAdd()">+ New rank</button>`) + `
+  <div class="card"><div class="card-h"><h3>👑 Owners — full access, can never be locked out</h3></div>
+   <div id="owners" style="display:flex;flex-wrap:wrap;gap:8px">${S.owners.map(o=>`<span class="pill brand" style="padding:6px 10px;font-size:13px">${user(o)}${S.is_owner?` <a href="#" style="color:inherit;text-decoration:none;margin-left:4px" onclick="ownerDel(event,'${o.id}')">×</a>`:""}</span>`).join("")}</div>
+   ${S.is_owner?`<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><input class="in" id="newowner" placeholder="Discord user ID" style="max-width:260px"><button class="btn sm" onclick="ownerAdd()">Add owner</button></div>
+   <p class="dim" style="font-size:12px;margin:10px 0 0">Discord → Settings → Advanced → Developer Mode, then right-click a user → Copy User ID.</p>`:`<p class="dim">Only owners can change this list.</p>`}</div>
+  <div id="ranks"></div>
+  <div class="sticky-save" style="position:sticky;bottom:16px;margin-top:18px;display:flex;justify-content:flex-end;z-index:5"><button class="btn" style="padding:12px 26px;font-size:15px;box-shadow:0 10px 30px -8px rgba(var(--brand-rgb),.7)" onclick="ranksSave()">Save staff ranks</button></div>`;
+  RANKS = S.ranks.map(r=>({...r, users:r.users.map(u=>u.id), _users:Object.fromEntries(r.users.map(u=>[u.id,u]))}));
+  ranksDraw();
+}
+let RANKS=[];
+function ranksDraw(){
+  syncRankRoles(); const S=STAFF;
+  $("#ranks").innerHTML = RANKS.map((r,i)=>`<div class="card" style="border-left:3px solid ${esc(r.color)}"><div class="card-h"><div style="display:flex;gap:8px;align-items:center;flex:1;min-width:220px">
+     <input type="color" class="in" value="${esc(r.color)}" style="width:46px;height:40px;padding:3px" oninput="RANKS[${i}].color=this.value"><input class="in" style="flex:1;font-weight:700" value="${esc(r.name)}" oninput="RANKS[${i}].name=this.value"></div>
+     <div style="display:flex;gap:6px"><span class="pill">${r.role_members||0} via roles · ${r.users.length} by ID</span><button class="btn red sm" onclick="if(confirm('Delete this rank?')){RANKS.splice(${i},1);ranksDraw()}">Delete</button></div></div>
+    <label class="l">What this rank can do</label>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px">${Object.entries(S.perms).map(([k,v])=>`<div class="feat ${r.perms.includes(k)?"on":""}" style="padding:10px 12px" onclick="permToggle(${i},'${k}',this)"><div class="t"><b style="font-size:13.5px">${esc(v.name)}</b><small>${esc(v.desc)}</small></div><div class="switch"></div></div>`).join("")}</div>
+    <div class="row" style="margin-top:6px"><div><label class="l">Anyone with these Discord roles gets this rank</label>${rolePicker("rr_"+i, r.roles)}</div>
+     <div><label class="l">…and these people (Discord user IDs)</label><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">${r.users.map(u=>`<span class="pill brand">${esc((r._users[u]||{}).name||u)} <a href="#" style="color:inherit;text-decoration:none" onclick="event.preventDefault();RANKS[${i}].users=RANKS[${i}].users.filter(x=>x!=='${u}');ranksDraw()">×</a></span>`).join("")}</div>
+      <div style="display:flex;gap:6px"><input class="in" id="ru_${i}" placeholder="User ID"><button class="btn ghost sm" onclick="rankUser(${i})">Add</button></div></div></div>
+    <label class="chk"><input type="checkbox" ${r.assign_role?"checked":""} onchange="RANKS[${i}].assign_role=this.checked"><span>Also give the people listed by ID the linked Discord role(s)<small>Keeps Discord roles and panel access in sync when you add someone here.</small></span></label></div>`).join("") || `<div class="card">${empty("🛡️","No ranks yet — add one.")}</div>`;
+}
+function permToggle(i,k,el){ const p=RANKS[i].perms; const j=p.indexOf(k); if(j<0) p.push(k); else p.splice(j,1); el.classList.toggle("on"); }
+function rankUser(i){ const v=$("#ru_"+i).value.trim(); if(!/^\d{15,21}$/.test(v)) return toast("That's not a Discord user ID",false); if(!RANKS[i].users.includes(v)) RANKS[i].users.push(v); ranksDraw(); }
+function rankAdd(){ RANKS.push({id:"r"+Date.now().toString(36),name:"New rank",color:"#38b6ff",perms:["tickets"],roles:[],users:[],_users:{},assign_role:false}); ranksDraw(); window.scrollTo(0,document.body.scrollHeight); }
+function syncRankRoles(){ RANKS.forEach((r,i)=>{ if($("#rr_"+i)) r.roles=rpVal("rr_"+i); }); }
+async function ranksSave(){ syncRankRoles();
+  const r=await act(()=>api("/api/staff",{ranks:RANKS.map(({_users,role_members,...x})=>x)}));
+  if(r){ toast(r.warnings?.length?"Saved — "+r.warnings.join(" "):"Staff ranks saved", !r.warnings?.length); pStaff(); } }
+async function ownerAdd(){ const v=$("#newowner").value.trim(); if(!/^\d{15,21}$/.test(v)) return toast("That's not a Discord user ID",false);
+  if(await act(()=>api("/api/staff",{owners:[...STAFF.owners.map(o=>o.id),v]}),"Owner added")) pStaff(); }
+async function ownerDel(e,id){ e.preventDefault(); const self=id===ME.user.id; if(!confirm(self?"Remove YOURSELF as owner?":"Remove this owner?")) return;
+  if(await act(()=>api("/api/staff",{owners:STAFF.owners.map(o=>o.id).filter(x=>x!==id),confirm_self_remove:self}),"Owner removed")) { if(self) location.reload(); else pStaff(); } }
+
+/* ───────────────────────── settings ───────────────────────── */
+function botCard(st){
+  const dot={online:"on",starting:"wait",error:"err"}[st.status]||"";
+  return `<div class="card"><div class="card-h"><h3>Bot connection</h3></div>
+   <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">${st.bot_avatar?`<img src="${esc(st.bot_avatar)}" style="width:44px;height:44px;border-radius:50%" alt="">`:""}<div><b>${esc(st.bot_name||"Bot")}</b><div class="mute" style="font-size:13px"><span class="dot ${dot}"></span> ${esc(st.status)}${st.guild_name?` · in ${esc(st.guild_name)}`:""}</div></div>
+   <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">${st.invite?`<a class="btn ghost sm" href="${esc(st.invite)}" target="_blank" rel="noopener">Invite link</a>`:""}<button class="btn ghost sm" onclick="restartBot()">Restart bot</button></div></div>
+   ${st.error?`<p class="neg">⚠️ ${esc(st.error)}</p>`:""}${st.warning?`<p style="color:var(--gold)">⚠️ ${esc(st.warning)}</p>`:""}
+   <details style="margin-top:14px"><summary style="cursor:pointer;color:var(--mute)">Advanced — change token, server or owners</summary>
+    <label class="l">New bot token (leave empty to keep)</label><input class="in" id="xtk" type="password" autocomplete="off">
+    <label class="l">Server ID</label><input class="in" id="xg" value="${esc(st.guild_id||"")}">
+    <label class="l">Bot Creator user IDs (can always log in, even if the bot is down)</label><input class="in" id="xo" value="${esc(st.owner_ids||"")}">
+    <label class="l">Public URL (if you put a domain / HTTPS in front)</label><input class="in" id="xu" value="${esc(st.public_url||"")}" placeholder="https://panel.example.com">
+    <p class="dim" style="font-size:12px">Discord login redirect: <code class="copy">${esc(st.redirect_uri)}</code></p>
+    <button class="btn" onclick="advSave()">Save & restart</button></details></div>`;
+}
+async function advSave(){ if(await act(()=>api("/api/setup",{token:$("#xtk").value,guild_id:$("#xg").value,owner_ids:$("#xo").value,public_url:$("#xu").value}),"Saved — restarting")) setTimeout(()=>location.reload(),6000); }
+async function restartBot(){ if(await act(()=>api("/api/setup/restart",{}),"Restarting…")) setTimeout(()=>location.reload(),6000); }
+const SET_HELP={currency:"Currency symbol",start_balance:"Starting balance for new accounts",payroll_hours:"Auto-payroll every N hours (0 = manual)",sales_tax:"Sales tax % on shop purchases",interest:"Daily bank interest %",late_fee:"Late fee % on overdue citations",citation_days:"Days to pay a citation",business_cost:"Cost to open a business",max_businesses:"Max businesses per player"};
+async function pSettings(){
+  const d=await api("/api/settings"), s=d.settings;
+  const dp=opt(d.depts.map(x=>({id:x.id,label:x.name})),s.treasury_dept,"— none (money destroyed) —");
+  $("#main").innerHTML = head("Settings","Bot connection, economy rules and integrations.") + botCard({...d.bot}) + `
+  <div class="card"><div class="card-h"><h3>Economy</h3></div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">${Object.entries(SET_HELP).map(([k,v])=>`<div><label class="l">${v}</label><input class="in" data-s="${k}" value="${esc(s[k])}"></div>`).join("")}
+   <div><label class="l">Treasury department (taxes, fees, fines)</label><select class="in" data-s="treasury_dept">${dp}</select></div></div>
+   <label class="chk"><input type="checkbox" data-s="dm_receipts" ${s.dm_receipts?"checked":""}><span>DM players receipts and notices</span></label>
+   <div style="text-align:right"><button class="btn" onclick="saveSettings()">Save economy settings</button></div></div><div id="cadcard"></div>`;
+  if(ME.features.cad) cadCard(d);
+}
+async function saveSettings(){ const b={}; $$("[data-s]").forEach(e=>b[e.dataset.s]=e.type==="checkbox"?e.checked:e.value); await act(()=>api("/api/settings",b),"Settings saved"); }
+async function cadCard(d){
+  const c=await api("/api/cad");
+  $("#cadcard").innerHTML=`<div class="card"><div class="card-h"><h3>SnailyCAD integration</h3><span class="pill ${c.enabled?"green":""}">${c.enabled?"enabled":"off"}</span></div>
+   <p class="mute" style="margin-top:0">For a <b>self-hosted</b> SnailyCAD (MySQL). CAD tickets for Discord-linked citizens become citations; paying them here marks the CAD record PAID; tickets paid/removed in the CAD are voided. Adds <code>/cad profile</code>.</p>
+   ${c.last_error?`<p class="neg">⚠️ ${esc(c.last_error)}</p>`:""}${c.last_sync?`<p class="dim">Last sync ${ago(c.last_sync)}</p>`:""}
+   <label class="chk"><input type="checkbox" id="ce" ${c.enabled?"checked":""}><span><b>Enabled</b></span></label>
+   <div class="row"><div style="flex:3"><label class="l">Database host</label><input class="in" id="ch" value="${esc(c.host||"")}"></div><div><label class="l">Port</label><input class="in" id="cp" value="${esc(c.port||"3306")}"></div></div>
+   <div class="row"><div><label class="l">Database</label><input class="in" id="cdb" value="${esc(c.database||"")}"></div><div><label class="l">User</label><input class="in" id="cu" value="${esc(c.user||"")}"></div><div><label class="l">Password${c.has_password?' <span class="dim">(saved)</span>':""}</label><input class="in" id="cpw" type="password" autocomplete="off"></div></div>
+   <label class="l">Department that receives CAD fines</label><select class="in" id="cd">${opt(d.depts.map(x=>({id:x.id,label:x.name})),c.dept_id,"— treasury —")}</select>
+   <label class="chk"><input type="checkbox" id="cst" ${c.sync_tickets!==false?"checked":""}><span>Import CAD tickets as citations</span></label>
+   <label class="chk"><input type="checkbox" id="cmp" ${c.mark_paid!==false?"checked":""}><span>Mark CAD tickets PAID when paid here</span></label>
+   ${c.enabled?"":`<label class="chk"><input type="checkbox" id="cio"><span>Also import older unpaid tickets</span></label>`}
+   <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" onclick="cadTest()">Test connection</button><button class="btn" onclick="cadSave()">Save</button></div><div id="cadres"></div></div>`;
+}
+const cadBody=()=>({enabled:$("#ce").checked,host:$("#ch").value,port:$("#cp").value,database:$("#cdb").value,user:$("#cu").value,password:$("#cpw").value,dept_id:$("#cd").value,sync_tickets:$("#cst").checked,mark_paid:$("#cmp").checked,import_old:$("#cio")?.checked});
+async function cadTest(){ try{ const r=await api("/api/cad/test",cadBody()); $("#cadres").innerHTML=`<div class="card" style="margin-top:12px;border-color:rgba(52,211,153,.5)">✅ ${r.citizens} citizens · ${r.linked_users} users linked to Discord · ${r.unpaid_tickets} unpaid tickets${r.can_mark_paid?"":"<br>⚠️ This DB user can't UPDATE — tickets won't be marked paid in the CAD."}</div>`; }catch(e){ $("#cadres").innerHTML=`<div class="card neg" style="margin-top:12px">${esc(e.message)}</div>`; } }
+async function cadSave(){ if(await act(()=>api("/api/cad",cadBody()),"Saved")) pSettings(); }
+
+/* ───────────────────────── boot ───────────────────────── */
+(async function boot(){
+  try{ applyBrand(await (await fetch("/api/brand")).json()); }catch(e){}
+  let st={}; try{ st=await (await fetch("/api/setup/status")).json(); }catch(e){}
+  if(!st.configured) return renderSetup(st);
+  try{ ME=await api("/api/me"); }catch(e){
+    if(e.message==="login") return;
+    if(e.message==="bot offline") return renderOffline(st);
+    $("#app").innerHTML=`<div class="center"><div class="card auth"><h1>⛔</h1><p>${esc(e.message)}</p><a class="btn ghost" href="/logout">Log out</a></div></div>`; return; }
+  CUR=ME.currency; applyBrand(ME.brand);
+  const h=location.hash.slice(1), base=h.split("-")[0];
+  if(h.startsWith("doc-edit")) PAGE="docbuilder"; else if(h.startsWith("ticket-")) PAGE="tickets"; else if(h.startsWith("apply-")) PAGE="apply"; else if(PAGES[base]) PAGE=base;
+  if(can("setup") && !ME.onboarded && !h) PAGE="setup";
+  shell();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+.env
+data/
+db/
+venv/
+__pycache__/
+*.pyc
+*-backup*.tar.gz
+backup.sql

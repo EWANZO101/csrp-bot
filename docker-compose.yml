@@ -1,0 +1,35 @@
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: economybot
+      MARIADB_USER: economybot
+      MARIADB_PASSWORD: ${DB_PASS}
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - ./db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 20
+
+  bot:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: economybot
+      DB_PASS: ${DB_PASS}
+      DB_NAME: economybot
+      DATA_DIR: /app/data
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 8095
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "${WEB_PORT:-8095}:8095"

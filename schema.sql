@@ -1,0 +1,191 @@
+CREATE TABLE IF NOT EXISTS guild_config (
+  guild_id BIGINT UNSIGNED PRIMARY KEY,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS users (
+  guild_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  wallet BIGINT NOT NULL DEFAULT 0,
+  bank BIGINT NOT NULL DEFAULT 0,
+  frozen TINYINT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (guild_id, user_id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS orgs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  kind ENUM('business','dept') NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  owner_id BIGINT UNSIGNED NULL,
+  balance BIGINT NOT NULL DEFAULT 0,
+  description VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_org (guild_id, kind, name)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS org_roles (
+  org_id INT NOT NULL,
+  role_id BIGINT UNSIGNED NOT NULL,
+  level ENUM('head','member') NOT NULL,
+  PRIMARY KEY (org_id, role_id),
+  FOREIGN KEY (org_id) REFERENCES orgs(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS org_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  org_id INT NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  description VARCHAR(300) NULL,
+  price BIGINT NOT NULL DEFAULT 0,
+  stock INT NULL,
+  for_sale TINYINT NOT NULL DEFAULT 1,
+  consumable TINYINT NOT NULL DEFAULT 1,
+  use_message VARCHAR(300) NULL,
+  role_id BIGINT UNSIGNED NULL,
+  role_days INT NULL,
+  UNIQUE KEY uq_item (org_id, name),
+  FOREIGN KEY (org_id) REFERENCES orgs(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS user_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  description VARCHAR(300) NULL,
+  consumable TINYINT NOT NULL DEFAULT 1,
+  use_message VARCHAR(300) NULL,
+  role_id BIGINT UNSIGNED NULL,
+  role_days INT NULL,
+  source VARCHAR(64) NULL,
+  qty INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_uitem (guild_id, user_id, name)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS payroll (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  org_id INT NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  amount BIGINT NOT NULL,
+  added_by BIGINT UNSIGNED NULL,
+  last_paid DATETIME NULL,
+  UNIQUE KEY uq_pay (org_id, user_id),
+  FOREIGN KEY (org_id) REFERENCES orgs(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS citations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  dept_id INT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  issuer_id BIGINT UNSIGNED NOT NULL,
+  amount BIGINT NOT NULL,
+  late_fee BIGINT NOT NULL DEFAULT 0,
+  reason VARCHAR(500) NOT NULL,
+  status ENUM('unpaid','paid','void') NOT NULL DEFAULT 'unpaid',
+  issued_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  due_at DATETIME NULL,
+  paid_at DATETIME NULL,
+  paid_by BIGINT UNSIGNED NULL,
+  note VARCHAR(300) NULL,
+  INDEX ix_cit (guild_id, user_id, status),
+  FOREIGN KEY (dept_id) REFERENCES orgs(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS ledger (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  actor_id BIGINT UNSIGNED NULL,
+  kind VARCHAR(32) NOT NULL,
+  src_type VARCHAR(8) NOT NULL,
+  src_id BIGINT UNSIGNED NOT NULL,
+  dst_type VARCHAR(8) NOT NULL,
+  dst_id BIGINT UNSIGNED NOT NULL,
+  amount BIGINT NOT NULL,
+  memo VARCHAR(255) NULL,
+  reversed_by BIGINT NULL,
+  INDEX ix_l_guild (guild_id, id),
+  INDEX ix_l_src (guild_id, src_type, src_id),
+  INDEX ix_l_dst (guild_id, dst_type, dst_id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS role_grants (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  role_id BIGINT UNSIGNED NOT NULL,
+  item VARCHAR(64) NULL,
+  expires_at DATETIME NOT NULL,
+  INDEX ix_rg (expires_at)
+) ENGINE=InnoDB;
+ALTER TABLE citations ADD COLUMN IF NOT EXISTS cad_record_id VARCHAR(191) NULL;
+ALTER TABLE citations ADD UNIQUE KEY IF NOT EXISTS uq_cad (cad_record_id)
+;
+CREATE TABLE IF NOT EXISTS documents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  slug VARCHAR(64) NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  summary VARCHAR(300) NULL,
+  category VARCHAR(60) NULL,
+  icon VARCHAR(16) NULL,
+  kind ENUM('page','link') NOT NULL DEFAULT 'page',
+  url VARCHAR(500) NULL,
+  content MEDIUMTEXT NULL,
+  source_url VARCHAR(500) NULL,
+  visibility ENUM('public','members','staff') NOT NULL DEFAULT 'public',
+  position INT NOT NULL DEFAULT 0,
+  in_panel TINYINT NOT NULL DEFAULT 1,
+  created_by BIGINT UNSIGNED NULL,
+  updated_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_doc (guild_id, slug)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS tickets (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  channel_id BIGINT UNSIGNED NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  category VARCHAR(60) NOT NULL,
+  subject VARCHAR(300) NULL,
+  status ENUM('open','closed') NOT NULL DEFAULT 'open',
+  claimed_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  closed_at DATETIME NULL,
+  closed_by BIGINT UNSIGNED NULL,
+  close_reason VARCHAR(300) NULL,
+  transcript MEDIUMTEXT NULL,
+  INDEX ix_t (guild_id, status),
+  INDEX ix_tc (channel_id)
+) ENGINE=InnoDB
+;
+CREATE TABLE IF NOT EXISTS app_forms (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  icon VARCHAR(16) NULL,
+  description TEXT NULL,
+  is_open TINYINT NOT NULL DEFAULT 1,
+  questions MEDIUMTEXT NOT NULL,
+  requirements TEXT NOT NULL,
+  review_channel BIGINT UNSIGNED NULL,
+  reviewer_roles TEXT NULL,
+  accept_roles TEXT NULL,
+  remove_roles TEXT NULL,
+  accept_message TEXT NULL,
+  cooldown_days INT NOT NULL DEFAULT 7,
+  position INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS applications (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  form_id INT NULL,
+  form_name VARCHAR(100) NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  answers MEDIUMTEXT NOT NULL,
+  status ENUM('pending','accepted','denied') NOT NULL DEFAULT 'pending',
+  reviewer_id BIGINT UNSIGNED NULL,
+  reason VARCHAR(1000) NULL,
+  review_message BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  decided_at DATETIME NULL,
+  INDEX ix_a (guild_id, status),
+  INDEX ix_au (guild_id, user_id),
+  FOREIGN KEY (form_id) REFERENCES app_forms(id) ON DELETE SET NULL
+) ENGINE=InnoDB
