@@ -202,8 +202,8 @@ const ledgerTable = (rows, me, undo) => rows.length ? `<div class="scroll"><tabl
   ${rows.map(r=>`<tr>${flow(r,me)}${undo?`<td>${!r.reversed_by&&r.kind!=="undo"?`<button class="btn ghost sm" onclick="undo(${r.id})">Undo</button>`:""}</td>`:""}</tr>`).join("")}</table></div>` : empty("🧾","No transactions yet.");
 function citTable(rows, o={}){
   if(!rows.length) return empty("✅","No citations.");
-  return `<div class="scroll"><table class="tbl"><tr><th>#</th>${o.who?"<th>Citizen</th>":""}<th>Reason</th><th>Total</th><th>Status</th><th>Due</th>${o.who?"<th>Issuer</th>":""}<th></th></tr>
-  ${rows.map(c=>`<tr><td class="dim mono">#${c.id}</td>${o.who?`<td>${user(c.user)}</td>`:""}<td>${esc(c.reason)}<div class="dim" style="font-size:12px">${esc(c.dept||"")}</div></td>
+  return `<div class="scroll"><table class="tbl"><tr><th>#</th>${o.who?"<th>Citizen</th>":""}<th>Character · Reason</th><th>Total</th><th>Status</th><th>Due</th>${o.who?"<th>Issuer</th>":""}<th></th></tr>
+  ${rows.map(c=>`<tr><td class="dim mono">#${c.id}</td>${o.who?`<td>${user(c.user)}</td>`:""}<td><div class="b">${c.character?esc(c.character):'<span style="color:#f87171">⚠ no character name</span>'}</div>${esc(c.reason)}<div class="dim" style="font-size:12px">${esc(c.dept||"")}</div></td>
    <td class="b">${fmt(c.amount+c.late_fee)}${c.late_fee?`<div class="dim" style="font-size:12px;font-weight:400">incl. ${fmt(c.late_fee)} late fee</div>`:""}</td>
    <td><span class="pill ${c.overdue?"overdue":c.status}">${c.overdue?"overdue":c.status}</span></td><td class="dim">${c.status==="unpaid"?ago(c.due_at):c.status==="paid"?"paid "+ago(c.paid_at):"—"}</td>
    ${o.who?`<td>${user(c.issuer)}</td>`:""}<td style="white-space:nowrap">${c.status==="unpaid"?(o.pay?`<button class="btn green sm" onclick="payCit(${c.id})">Pay</button>`:"")+(o.admin?` <button class="btn ghost sm" onclick="citAct(${c.id},'waive_fee')">Waive fee</button> <button class="btn red sm" onclick="citAct(${c.id},'void')">Void</button>`:""):""}</td></tr>`).join("")}</table></div>`;

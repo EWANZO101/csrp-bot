@@ -35,7 +35,7 @@ Useful:
 `/shop browse|buy|all` `/inventory` `/give` `/use`
 `/business …` and `/department …`: create, delete, list, info, inventory, edit, deposit, withdraw, send, transfer_ownership, `item add|edit|remove|give`, `role add|remove`
 `/payroll add|remove|list|run` (paid automatically every `payroll_hours`)
-`/citation issue|pay|mine|list|info|edit|void` (late fee added automatically once a citation is overdue)
+`/citation issue|pay|mine|list|info|edit|void` (character name and reason are required on every citation; late fee added automatically once a citation is overdue)
 `/admin print|remove|wipe|freeze|undo|audit|stats|settings|config|set_log|staff`
 `/cad profile|sync` (SnailyCAD) · `/help`
 

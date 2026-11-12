@@ -919,7 +919,7 @@ fetch('/api/oauth',{method:'POST',headers:{'Content-Type':'application/json','X-
     # ───────── helpers ─────────
     def _cit(self, r):
         return {"id": r["id"], "dept": r.get("dept"), "amount": r["amount"], "late_fee": r["late_fee"],
-                "reason": r["reason"], "status": r["status"], "issued_at": _iso(r["issued_at"]),
+                "reason": r["reason"], "character": r.get("character_name"), "status": r["status"], "issued_at": _iso(r["issued_at"]),
                 "due_at": _iso(r["due_at"]), "paid_at": _iso(r["paid_at"]), "note": r["note"],
                 "user_id": str(r["user_id"]), "overdue": bool(r["status"] == "unpaid" and r["due_at"]
                                                               and r["due_at"] < dt.datetime.utcnow())}

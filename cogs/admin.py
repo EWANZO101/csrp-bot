@@ -292,7 +292,7 @@ HELP = {
     "🏛️ Departments": "`/department create|delete|list|info|inventory|edit|deposit|withdraw|send`\n"
                       "`/department item add|edit|remove|give` · `/department role add|remove`",
     "💼 Payroll": "`/payroll add|remove|list|run` — auto-paid on a schedule",
-    "🚨 Citations": "`/citation issue|pay|mine|list|info|edit|void` — late fees applied automatically",
+    "🚨 Citations": "`/citation issue|pay|mine|list|info|edit|void` — character name + reason required; late fees applied automatically",
     "🎫 Tickets": "Open one from the ticket panel · `/ticket close|add|remove|rename|panel`",
     "📚 Documents": "`/docs` — SOPs, penal codes and links (also on the web panel)",
     "📝 Applications": "`/apply` — see requirements and apply on the web panel",
