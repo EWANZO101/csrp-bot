@@ -26,6 +26,10 @@ class AppState:
         if not self.settings.get("web_secret"):
             self.settings["web_secret"] = secrets.token_hex(32)
             self.save()
+        env_url = (os.getenv("PUBLIC_URL") or "").strip().rstrip("/")
+        if env_url and self.settings.get("public_url") != env_url:
+            self.settings["public_url"] = env_url
+            self.save()
         if not os.path.exists(CODE_FILE):
             with open(CODE_FILE, "w") as f:
                 f.write(secrets.token_hex(4).upper() + "\n")

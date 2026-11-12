@@ -136,8 +136,6 @@ class Panel:
         return self.bot.get_guild(self.gid) if (self.bot and self.gid) else None
 
     def redirect_uri(self, request) -> str:
-        if self.state.settings.get("public_url"):
-            return self.state.settings["public_url"].rstrip("/") + "/callback"
         proto = request.headers.get("X-Forwarded-Proto", request.scheme)
         host = request.headers.get("X-Forwarded-Host", request.host)
         return f"{proto}://{host}/callback"

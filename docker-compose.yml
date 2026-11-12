@@ -29,6 +29,7 @@ services:
       DATA_DIR: /app/data
       WEB_HOST: 0.0.0.0
       WEB_PORT: 8095
+      PUBLIC_URL: ${PUBLIC_URL:-}
     volumes:
       - ./data:/app/data
     ports:
