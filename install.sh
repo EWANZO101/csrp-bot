@@ -119,7 +119,8 @@ if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then echo "  Panel:   https://$DOMAIN
 echo "  Panel:   http://$IP   (also http://$IP:$PORT)"
 echo "  Domain:  point an A record for $DOMAIN to $IP — HTTPS switches on automatically within 10 minutes."; fi
 if [ -f data/settings.json ] && grep -q '"token"' data/settings.json; then
-  echo "  Your bot settings were restored — just open the panel and log in."
+  echo "  Your bot settings were restored. Add  http://$IP/callback  (and later https://$DOMAIN/callback)"
+  echo "  under Discord Developer Portal → OAuth2 → Redirects, then open the panel and log in."
 else
   echo "  Open it in your browser and paste your bot token to finish setup."
 fi

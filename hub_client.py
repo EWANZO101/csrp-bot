@@ -96,7 +96,8 @@ class Hub:
                 "guild_icon": g.icon.url if g and g.icon else None, "members": g.member_count if g else None,
                 "panel_url": st.get("public_url") or st.get("seen_url"), "status": self.state.status,
                 "features": {**core.DEFAULT_FEATURES, **(st.get("features") or {})},
-                "auto_update": bool(self.prefs.get("auto")), "allow_remote": bool(self.prefs.get("allow_remote"))}
+                "auto_update": bool(self.prefs.get("auto")), "allow_remote": bool(self.prefs.get("allow_remote")),
+                "owner_ids": [str(x) for x in st.get("owner_ids", [])]}
 
     async def ensure_registered(self):
         h = self.state.settings.get("hub") or {}

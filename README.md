@@ -12,7 +12,7 @@ This installs Docker if needed, downloads the bot to `/opt/csrp-bot`, starts it 
 
 ### Moving to another VPS (keeping everything)
 1. On the old server: `bash backup.sh`. This creates `csrp-backup.tar.gz` (database and panel settings).
-2. Copy that file to the new server and run the one-line install **from the same folder**. The backup is restored automatically, and the panel registers its new address with Discord the first time you log in.
+2. Copy that file to the new server and run the one-line install **from the same folder**. The backup is restored automatically. Then in the Discord Developer Portal → your app → OAuth2 → Redirects, add the new panel address followed by `/callback` (for example `https://bot.snailyapp.com/callback`). Discord doesn't let bots add this themselves.
 
 Useful:
 * Logs: `cd /opt/csrp-bot && docker compose logs -f bot`
@@ -20,9 +20,9 @@ Useful:
 * Start setup over (connect a different bot): delete `data/settings.json`, then `docker compose restart bot`
 
 ## Setup is done in the browser
-1. Open the panel and paste the **bot token** (Developer Portal → New Application → Bot → Reset Token). The panel turns on the Members intent for you.
+1. Open the panel and paste the **bot token** (Developer Portal → New Application → Bot → Reset Token). The panel tries to turn on the Members intent for you.
 2. Click **Add to server**. The server is detected automatically.
-3. If Discord didn't accept the login address automatically, copy the one URL the panel shows into OAuth2 → Redirects.
+3. Copy the one URL the panel shows into OAuth2 → Redirects (Discord requires this once for each panel address).
 4. Log in with Discord → **Server setup**. Toggle features, pick channels and roles from dropdowns, set your branding, then save. The bot posts the documents, tickets and applications panels itself.
 
 ## Discord application checklist
