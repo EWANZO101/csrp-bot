@@ -243,6 +243,59 @@ async def _hub_upload(hub, b):
                     raise EconError(msg or f"hub upload HTTP {r.status}")
 
 
+DATA_ROOT = os.path.dirname(os.path.dirname(DIR))      # DATA_DIR
+DATA_SKIP_DIRS = {"backups"}
+DATA_SKIP_FILES = {"update-request.json", "update-status.json", ".restored"}
+DATA_STATE = os.path.join(DIR, ".hub-data.json")
+
+
+def _data_files():
+    for root, dirs, files in os.walk(DATA_ROOT):
+        rel_root = os.path.relpath(root, DATA_ROOT)
+        if rel_root == ".":
+            dirs[:] = [d for d in dirs if d not in DATA_SKIP_DIRS]
+        for f in sorted(files):
+            if f in DATA_SKIP_FILES or ".bak" in f or f.endswith((".part", ".tmp")):
+                continue
+            yield os.path.join(root, f), os.path.normpath(os.path.join("data", rel_root, f))
+
+
+async def _hub_send_data(hub):
+    """Send data/ (settings incl. the bot token, branding, images) so the hub can rebuild this bot on a new server."""
+    import hub_client
+    h = hashlib.sha256()
+    files = sorted(_data_files(), key=lambda x: x[1])
+    for path, arc in files:
+        h.update(arc.encode())
+        with open(path, "rb") as f:
+            h.update(hashlib.sha256(f.read()).digest())
+    digest = h.hexdigest()
+    try:
+        with open(DATA_STATE) as f:
+            last = json.load(f)
+    except Exception:
+        last = {}
+    if last.get("sha") == digest and last.get("at", 0) > dt.datetime.utcnow().timestamp() - 86400:
+        return False
+    fd, tmp = tempfile.mkstemp(suffix=".tar.gz", dir=os.path.dirname(DIR))
+    os.close(fd)
+    try:
+        with tarfile.open(tmp, "w:gz") as t:
+            for path, arc in files:
+                t.add(path, arc, recursive=False)
+        with open(tmp, "rb") as f:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=600)) as s:
+                async with s.post(hub_client.HUB_URL + "/api/v1/backups/data", data=f,
+                                  headers={**hub._headers(), "Content-Type": "application/gzip"}) as r:
+                    if r.status >= 400:
+                        raise EconError(f"hub data upload HTTP {r.status}")
+    finally:
+        os.remove(tmp)
+    with open(DATA_STATE, "w") as f:
+        json.dump({"sha": digest, "at": dt.datetime.utcnow().timestamp()}, f)
+    return True
+
+
 async def hub_sync_once(state):
     hub = getattr(state, "hub", None)
     if not hub or not (state.settings.get("hub") or {}).get("key") or not hub_prefs(state)["sync"]:
@@ -256,6 +309,10 @@ async def hub_sync_once(state):
         done.add(b["name"])
         _mark_synced(done)
         sent += 1
+    try:
+        await _hub_send_data(hub)
+    except Exception as e:
+        logger.warning("hub settings upload failed: %s", e)
     return sent
 
 

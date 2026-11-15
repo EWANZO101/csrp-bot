@@ -19,6 +19,11 @@ Useful:
 * Restart: `docker compose restart bot`
 * Start setup over (connect a different bot): delete `data/settings.json`, then `docker compose restart bot`
 
+## Backups and disaster recovery
+- **Panel → Settings → Database backups:** a backup is made every day (04:00 UTC). You can also back up now, download, upload (`.sql`, `.sql.gz` or `csrp-backup.tar.gz`) and restore. A restore always saves the current data first.
+- **Bot Hub sync:** every backup is also sent to the OpsLab Bot Hub (https://ops-discordb.opslabsystems.cloud), along with the `data/` folder (settings, branding). Bot owners sign in there with Discord. On the **Backups** page they can export, import and restore backups, or ask the bot to back up now. Both switches (send to hub, allow restore from hub) are on the panel's backup card.
+- **Reinstall on a new server:** on the Bot Hub Backups page, press **Create install command** and paste the command into a fresh Ubuntu server as root. It installs Docker and nginx, restores the latest database backup and the bot's settings (including the bot token), and starts the bot. The link expires after 24 hours or 5 uses and can be revoked. Never share it.
+
 ## Setup is done in the browser
 1. Open the panel and paste the **bot token** (Developer Portal → New Application → Bot → Reset Token). The panel tries to turn on the Members intent for you.
 2. Click **Add to server**. The server is detected automatically.
