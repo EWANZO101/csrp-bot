@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import (EconError, q, q1, cfg, money, emb, ts, parse_amount, transfer, ensure_user, get_user,
+from core import (EconError, q, q1, cfg, active_character_name, money, emb, ts, parse_amount, transfer, ensure_user, get_user,
                   is_admin, org_level, log, dm, reply, GREEN, BLUE, GOLD, MEMBER)
 
 SRC = [app_commands.Choice(name="Bank", value="bank"), app_commands.Choice(name="Wallet", value="wallet")]
@@ -11,7 +11,8 @@ KIND_TXT = {"start": "Starting balance", "pay": "Payment", "deposit": "Deposit",
             "org_deposit": "Org deposit", "org_withdraw": "Org withdrawal", "purchase": "Purchase", "tax": "Tax",
             "payroll": "Payroll", "citation": "Citation", "admin_print": "Admin print", "admin_remove": "Admin remove",
             "interest": "Interest", "undo": "Reversal", "business_fee": "Business fee", "org_close": "Org closed",
-            "wipe": "Wipe", "org_transfer": "Org transfer"}
+            "wipe": "Wipe", "org_transfer": "Org transfer",
+            "character": "Character switch", "property": "Property purchase", "import": "Import (old bot)"}
 
 
 async def balance_embed(inter: discord.Interaction, member: discord.Member) -> discord.Embed:
@@ -19,7 +20,8 @@ async def balance_embed(inter: discord.Interaction, member: discord.Member) -> d
     c = await cfg(gid)
     u = await get_user(gid, member.id)
     e = emb(None, None, GREEN)
-    e.set_author(name=f"{member.display_name}'s balance", icon_url=member.display_avatar.url)
+    char = await active_character_name(gid, member.id)
+    e.set_author(name=f"{member.display_name}'s balance" + (f" · 🎭 {char}" if char else ""), icon_url=member.display_avatar.url)
     e.add_field(name="👛 Wallet", value=money(c, u["wallet"]))
     e.add_field(name="🏦 Bank", value=money(c, u["bank"]))
     e.add_field(name="💰 Net worth", value=money(c, u["wallet"] + u["bank"]))

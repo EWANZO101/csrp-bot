@@ -132,7 +132,8 @@ function renderLogin(){
   $("#app").innerHTML = `<div class="center"><div class="auth"><img class="logo" src="/brand/logo" alt="">
    <h1>${esc(BRAND.full||BRAND.name)}</h1><p>Sign in with Discord to manage your account, read documents and apply.</p>
    <a class="btn discord-btn" href="/login${location.hash?`?next=/${encodeURIComponent(location.hash)}`:""}"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.4 18.4 0 0 0-5.6 0L8.6 3a19.7 19.7 0 0 0-4.9 1.5C.6 9.1-.3 13.6.1 18.1a19.9 19.9 0 0 0 6 3l1.3-2.1a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2.1a19.8 19.8 0 0 0 6-3c.5-5.2-.8-9.7-3.6-13.7zM8 15.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.6 8 10.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4z"/></svg>Login with Discord</a>
-   <p style="margin-top:26px"><a class="mute" href="/docs">📚 Browse public documents →</a></p></div></div>`;
+   <p style="margin-top:26px"><a class="mute" href="/docs">📚 Browse public documents →</a></p>
+   <p style="margin-top:8px"><a class="mute" href="/guide">📖 How to use the bot — step-by-step guide →</a></p></div></div>`;
 }
 function renderOffline(st){
   $("#app").innerHTML = `<div class="center"><div class="wizard"><div class="auth" style="max-width:none"><img class="logo" src="/brand/logo" alt=""><h1>Bot is ${esc(st.status||"offline")}</h1></div>
@@ -147,6 +148,8 @@ function navItems(){
   if(f.economy) out.push(["me","My account","wallet"]);
   if(f.documents) out.push(["docs","Documents","book"]);
   if(f.applications) out.push(["apply","Apply","form"]);
+  out.push(["activity","Activity","chart"]);
+  out.push(["guide","Guide","book"]);
   if(a){
     out.push(["h","Staff"]); out.push(["overview","Overview","chart"]);
     if(f.economy&&can("economy")) out.push(["users","Citizens","users"]);
@@ -164,10 +167,10 @@ function navItems(){
   return out;
 }
 const PAGES = {me:()=>pMe(), docs:()=>pDocs(), apply:()=>pApply(), overview:()=>pOverview(), users:()=>pUsers(), orgs:()=>pOrgs(), citations:()=>pCitations(), ledger:()=>pLedger(),
-  tickets:()=>pTickets(), applications:()=>pApplications(), docbuilder:()=>pDocBuilder(), setup:()=>pSetup(), settings:()=>pSettings(), staff:()=>pStaff(), requests:()=>pRequests(), wizard:()=>startWizard()};
+  tickets:()=>pTickets(), applications:()=>pApplications(), docbuilder:()=>pDocBuilder(), setup:()=>pSetup(), settings:()=>pSettings(), staff:()=>pStaff(), requests:()=>pRequests(), wizard:()=>startWizard(), activity:()=>pActivity()};
 function shell(){
   const items = navItems();
-  if(!PAGE || !items.some(i=>i[0]===PAGE)) PAGE = (items.find(i=>i[0]!=="h")||["docs"])[0];
+  if(!PAGE || PAGE==="guide" || !items.some(i=>i[0]===PAGE)) PAGE = (items.find(i=>i[0]!=="h"&&i[0]!=="guide")||["docs"])[0];
   $("#app").innerHTML = `<div class="mobile-top"><button class="btn ghost icon" onclick="$('.side').classList.toggle('open')">${I("menu")}</button><img src="/brand/logo" alt=""><b>${esc(BRAND.name)}</b></div>
   <div class="app"><aside class="side"><a class="brand" href="/"><img src="/brand/logo" alt=""><span><b>${esc(BRAND.name)}</b><small>${esc(BRAND.full||ME.guild.name)}</small></span></a>
    ${items.map(i=>i[0]==="h"?`<div class="nav-h">${i[1]}</div>`:`<button class="nav ${i[0]===PAGE?"on":""}" data-p="${i[0]}">${I(i[2])}<span>${i[1]}</span>${i[3]?`<span class="badge">${i[3]}</span>`:""}</button>`).join("")}
@@ -175,7 +178,7 @@ function shell(){
    <div class="me">${ME.user.avatar?`<img src="${esc(ME.user.avatar)}" alt="">`:""}<div class="n"><b>${esc(ME.user.name)}</b><small>${esc((ME.ranks||[]).join(", ")||"Member")}</small></div><a class="btn ghost icon" href="/logout" title="Log out">${I("logout")}</a></div>
   </aside><div class="side-dim" onclick="$('.side').classList.remove('open')"></div><main class="main" id="main"></main></div>
   <nav class="bottom-nav">${bottomItems(items).map(i=>`<button class="${i[0]===PAGE?"on":""}" data-b="${i[0]}">${I(i[2])}<span>${i[1]}</span>${i[3]?`<span class="badge">${i[3]}</span>`:""}</button>`).join("")}<button data-b="__more">${I("menu")}<span>More</span></button></nav>`;
-  $$(".nav").forEach(b=>b.onclick=()=>go(b.dataset.p));
+  $$(".nav").forEach(b=>b.onclick=()=>b.dataset.p==="guide"?location.assign("/guide"):go(b.dataset.p));
   $$("[data-b]").forEach(b=>b.onclick=()=>b.dataset.b==="__more"?$(".side").classList.add("open"):go(b.dataset.b));
   render();
 }
@@ -266,6 +269,23 @@ async function submitApp(id){
 }
 
 /* ───────────────────────── admin: overview / users / orgs ───────────────────────── */
+let ACT_T=null;
+async function pActivity(){
+  clearTimeout(ACT_T);
+  const d=await api("/api/activity"); const max=Math.max(1,...d.daily.map(x=>x.n));
+  const medal=i=>["🥇","🥈","🥉"][i]||`<span class="dim">${i+1}</span>`;
+  $("#main").innerHTML = head("Bot activity","Who's using the bot · refreshes every 30 seconds") +
+  `<div class="grid">${stat("Active now",d.now.length,"last 15 minutes","users")}${stat("Active today",d.today.length,"last 24 hours","chart")}
+   ${stat("This week",d.week_users,`${d.week_actions} actions`,"list")}</div>
+  <div class="cols" style="margin-top:16px">
+   <div class="card"><div class="card-h"><h3>🟢 Active now</h3></div>${d.now.length?`<table class="tbl">${d.now.map(r=>`<tr><td>${user(r.user)}</td><td>${r.act?`<span class="pill brand">${esc(r.act)}</span>`:""}</td><td class="dim">${ago(r.seen)}</td></tr>`).join("")}</table>`:empty("😴","Nobody in the last 15 minutes.")}</div>
+   <div class="card"><div class="card-h"><h3>🏆 Most active this week</h3></div>${d.week.length?`<table class="tbl">${d.week.map((r,i)=>`<tr><td>${medal(i)}</td><td>${user(r.user)}</td><td class="b">${r.uses} actions</td><td class="dim">${r.days} day${r.days==1?"":"s"}</td></tr>`).join("")}</table>`:empty("📭","No activity yet.")}</div>
+  </div>
+  <div class="card" style="margin-top:16px"><div class="card-h"><h3>Actions per day · 14 days</h3></div>
+   ${d.daily.length?`<div class="bars">${d.daily.map(x=>`<div class="bar" style="height:${Math.max(2,x.n/max*100)}%" data-t="${x.d}: ${x.n} actions · ${x.u} people"></div>`).join("")}</div><div class="bl">${d.daily.map(x=>`<span>${x.d.slice(5)}</span>`).join("")}</div>`:empty("📊","No activity yet.")}</div>
+  <div class="card" style="margin-top:16px"><div class="card-h"><h3>🕒 Active today</h3></div>${d.today.length?`<div class="scroll"><table class="tbl"><tr><th>Player</th><th>Last used</th><th>Actions</th><th>Last seen</th></tr>${d.today.map(r=>`<tr><td>${user(r.user)}</td><td>${r.act?`<span class="pill">${esc(r.act)}</span>`:""}</td><td class="b">${r.uses}</td><td class="dim">${ago(r.seen)}</td></tr>`).join("")}</table></div>`:empty("🌙","Nobody yet today.")}</div>`;
+  ACT_T=setTimeout(()=>{ if(PAGE==="activity") pActivity().catch(()=>{}); },30000);
+}
 async function pOverview(){
   const d=await api("/api/overview"); const supply=d.wallets+d.banks+d.business+d.depts; const max=Math.max(1,...d.daily.map(x=>x.s)); const c=ME.counts||{};
   $("#main").innerHTML = head("Overview", `${esc(ME.guild.name)} at a glance`) +
@@ -677,14 +697,53 @@ const SET_HELP={currency:"Currency symbol",start_balance:"Starting balance for n
 async function pSettings(){
   const d=await api("/api/settings"), s=d.settings;
   const dp=opt(d.depts.map(x=>({id:x.id,label:x.name})),s.treasury_dept,"— none (money destroyed) —");
-  $("#main").innerHTML = head("Settings","Bot connection, updates, economy rules and integrations.") + botCard({...d.bot}) + `<div id="updcard"></div>` + `
+  $("#main").innerHTML = head("Settings","Bot connection, updates, economy rules and integrations.") + botCard({...d.bot}) + `<div id="updcard"></div><div id="bkcard"></div>` + `
   <div class="card"><div class="card-h"><h3>Economy</h3></div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">${Object.entries(SET_HELP).map(([k,v])=>`<div><label class="l">${v}</label><input class="in" data-s="${k}" value="${esc(s[k])}"></div>`).join("")}
    <div><label class="l">Treasury department (taxes, fees, fines)</label><select class="in" data-s="treasury_dept">${dp}</select></div></div>
    <label class="chk"><input type="checkbox" data-s="dm_receipts" ${s.dm_receipts?"checked":""}><span>DM players receipts and notices</span></label>
    <div style="text-align:right"><button class="btn" onclick="saveSettings()">Save economy settings</button></div></div><div id="cadcard"></div>`;
   if(ME.features.cad) cadCard(d);
-  updCard();
+  updCard(); bkCard().catch(e=>{ const el=$("#bkcard"); if(el) el.innerHTML=`<div class="card neg">Backups: ${esc(e.message)}</div>`; });
 }
+/* ───────── database backups ───────── */
+const fsize = n => n>=1048576?`${(n/1048576).toFixed(1)} MB`:`${Math.max(1,Math.round(n/1024))} KB`;
+const BK_KIND = {auto:["daily","green"], manual:["manual",""], "pre-restore":["before restore","gold"], uploaded:["uploaded","blue"], hub:["from hub","blue"]};
+async function bkCard(){
+  const el=$("#bkcard"); if(!el) return;
+  const d=await api("/api/backups"), rows=d.backups;
+  el.innerHTML=`<div class="card"><div class="card-h"><h3>💾 Database backups</h3><div style="display:flex;gap:8px;flex-wrap:wrap">
+    <label class="btn ghost sm" style="cursor:pointer">⬆️ Upload backup<input type="file" accept=".sql,.gz,.tgz" style="display:none" onchange="bkUpload(this)"></label>
+    <button class="btn sm" id="bknow" onclick="bkNow()">Back up now</button></div></div>
+   <p class="mute" style="margin-top:0">A backup is made automatically every day at ${String(d.daily_hour_utc).padStart(2,"0")}:00 UTC (last ${d.keep.auto} kept). Download any backup to keep a copy off the server.
+    Upload a <code>.sql</code>, <code>.sql.gz</code> or <code>csrp-backup.tar.gz</code> to import it, then press <b>Restore</b>. Restoring saves your current data first, then replaces it and restarts the bot.</p>
+   ${d.hub?`<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:4px 0 10px;font-size:13.5px">
+     <span class="pill ${d.hub.connected?"green":"red"}">${d.hub.connected?"Bot Hub connected":"Bot Hub not connected"}</span>
+     <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" ${d.hub.sync?"checked":""} onchange="bkHub({sync:this.checked})"> Send every backup to the Bot Hub</label>
+     <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" ${d.hub.allow_restore?"checked":""} onchange="bkHub({allow_restore:this.checked})"> Allow restore requests from the Bot Hub</label></div>`:""}
+   <div id="bkmsg"></div>
+   ${rows.length?`<div class="scroll"><table class="tbl"><tr><th>Backup</th><th>Type</th><th>Size</th><th>When</th><th></th></tr>
+   ${rows.map(b=>{ const k=BK_KIND[b.kind]||[b.kind,""]; return `<tr><td class="mono" style="font-size:12.5px">${esc(b.name)}</td><td><span class="pill ${k[1]}">${k[0]}</span>${b.on_hub?' <span class="pill green" title="Copy stored on the Bot Hub">☁ hub</span>':""}</td><td class="dim">${fsize(b.size)}</td><td class="dim" title="${dtx(b.created)}">${ago(b.created)}</td>
+    <td style="white-space:nowrap"><a class="btn ghost sm" href="/api/backups/download/${encodeURIComponent(b.name)}" download>⬇️ Download</a> <button class="btn ghost sm" onclick="bkRestore('${esc(b.name)}')">♻️ Restore</button> <button class="btn ghost sm" onclick="bkDel('${esc(b.name)}')">🗑️</button></td></tr>`; }).join("")}</table></div>`
+   : empty("💾","No backups yet — press <b>Back up now</b>.")}</div>`;
+}
+async function bkHub(v){ if(await act(()=>api("/api/backups/hub",v),"Saved")) bkCard(); }
+async function bkNow(){ const b=$("#bknow"); b.disabled=true; b.textContent="Backing up…"; if(await act(()=>api("/api/backups/create",{}),"Backup created")) bkCard(); else { b.disabled=false; b.textContent="Back up now"; } }
+async function bkUpload(inp){
+  const f=inp.files[0]; if(!f) return; $("#bkmsg").innerHTML=`<p class="dim">Uploading ${esc(f.name)}…</p>`;
+  const fd=new FormData(); fd.append("file",f);
+  try{ const r=await fetch("/api/backups/upload",{method:"POST",headers:{"X-Panel":"1"},body:fd}); let j={}; try{ j=await r.json(); }catch(e){}
+    if(!r.ok) throw new Error(j.error||`HTTP ${r.status}`); toast("Uploaded — press Restore on it to import"); await bkCard();
+  }catch(e){ $("#bkmsg").innerHTML=`<div class="card neg">${esc(e.message)}</div>`; }
+}
+async function bkRestore(name){
+  const t=prompt(`Restore the database from\n${name}?\n\nThis REPLACES all current bot data (your current data is backed up first) and restarts the bot.\n\nType RESTORE to continue:`);
+  if(t===null) return; if(t.trim().toUpperCase()!=="RESTORE") return toast("Not restored — you must type RESTORE",false);
+  $("#bkmsg").innerHTML=`<p class="dim">Restoring… this can take a minute.</p>`;
+  const r=await act(()=>api("/api/backups/restore",{name,confirm:t}));
+  if(r){ $("#bkmsg").innerHTML=`<div class="card" style="border-color:rgba(52,211,153,.5)">✅ Restored from <code>${esc(name)}</code>. Your previous data was saved as <code>${esc(r.pre_restore)}</code>. The bot is restarting…</div>`; setTimeout(()=>bkCard().catch(()=>{}),4000); }
+  else $("#bkmsg").innerHTML="";
+}
+async function bkDel(name){ if(!confirm(`Delete backup ${name}? This can't be undone.`)) return; if(await act(()=>api("/api/backups/delete",{name}),"Deleted")) bkCard(); }
 let UPD=null, updPoll=null;
 async function updCard(){
   const el=$("#updcard"); if(!el) return clearInterval(updPoll);

@@ -21,6 +21,7 @@ SETTING_HELP = {
     "citation_days": "Default days to pay a citation",
     "business_cost": "Cost to open a business",
     "max_businesses": "Max businesses per user",
+    "max_characters": "Max characters per user (each has its own bank & inventory)",
     "dm_receipts": "DM users receipts (true/false)",
 }
 TARGET = [app_commands.Choice(name="Bank", value="bank"), app_commands.Choice(name="Wallet", value="wallet")]
@@ -89,7 +90,7 @@ class Admin(commands.Cog):
     @admin.command(name="wipe", description="Completely wipe all data for a user")
     async def wipe(self, inter: discord.Interaction, user: discord.Member):
         await require_admin(inter, "economy")
-        if not await confirm(inter, f"Wipe **all** economy data for {user.mention}? (money, items, citations, payroll, "
+        if not await confirm(inter, f"Wipe **all** economy data for {user.mention}? (money, items, characters, citations, payroll, "
                              "owned businesses). This can't be undone.", "Wipe"):
             return
         gid = inter.guild_id
@@ -98,6 +99,9 @@ class Admin(commands.Cog):
             await ex("DELETE FROM orgs WHERE id=%s", b["id"])
         await ex("DELETE FROM users WHERE guild_id=%s AND user_id=%s", gid, user.id)
         await ex("DELETE FROM user_items WHERE guild_id=%s AND user_id=%s", gid, user.id)
+        await ex("DELETE ci FROM character_items ci JOIN characters ch ON ch.id=ci.char_id WHERE ch.guild_id=%s AND ch.user_id=%s",
+                 gid, user.id)
+        await ex("DELETE FROM characters WHERE guild_id=%s AND user_id=%s", gid, user.id)
         await ex("DELETE FROM citations WHERE guild_id=%s AND user_id=%s", gid, user.id)
         await ex("DELETE FROM role_grants WHERE guild_id=%s AND user_id=%s", gid, user.id)
         await ex("DELETE p FROM payroll p JOIN orgs o ON o.id=p.org_id WHERE o.guild_id=%s AND p.user_id=%s", gid, user.id)
@@ -161,6 +165,8 @@ class Admin(commands.Cog):
             raise EconError(f"#{tx_id} was already reversed by #{r['reversed_by']}.")
         if r["kind"] == "undo":
             raise EconError("Can't undo a reversal.")
+        if r["kind"] == "character":
+            raise EconError("Character switches/deletions can't be undone — they just move money between a player's characters.")
         src = (r["dst_type"], r["dst_id"])
         dst = (r["src_type"], r["src_id"])
         if src[0] in ("wallet", "bank"):
@@ -188,10 +194,14 @@ class Admin(commands.Cog):
         else:
             rows = await q("SELECT * FROM ledger WHERE guild_id=%s ORDER BY id DESC LIMIT %s", inter.guild_id, limit)
         orgs = {o["id"]: o["name"] for o in await q("SELECT id,name FROM orgs WHERE guild_id=%s", inter.guild_id)}
+        chars = {ch["id"]: ch for ch in await q("SELECT id,name,user_id FROM characters WHERE guild_id=%s", inter.guild_id)}
 
         def lab(t, i):
             if t in ("wallet", "bank"):
                 return f"<@{i}>{'👛' if t == 'wallet' else ''}"
+            if t in ("cwallet", "cbank"):
+                ch = chars.get(i)
+                return (f"<@{ch['user_id']}>🎭{ch['name']}" if ch else f"🎭char#{i}") + ("👛" if t == "cwallet" else "")
             if t == "org":
                 return f"**{orgs.get(i, f'org#{i}')}**"
             return f"*{t}*"

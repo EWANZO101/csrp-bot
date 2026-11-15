@@ -2,9 +2,10 @@
 import io, re, html, asyncio, datetime as dt
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 import core
+import player_info
 from core import EconError, q, q1, ex, cfg, set_cfg, emb, ts, reply, log, dm, is_admin, GREEN, RED, BLUE, GOLD
 
 
@@ -49,6 +50,56 @@ class OpenModal(discord.ui.Modal):
 class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def cog_load(self):
+        await ex("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS info_msg_id BIGINT UNSIGNED NULL")
+        self.info_loop.start()
+
+    def cog_unload(self):
+        self.info_loop.cancel()
+
+    # ───────── 📋 player info (posted in every open ticket, kept up to date) ─────────
+    async def post_info(self, guild: discord.Guild, t: dict):
+        ch = guild.get_channel(t["channel_id"] or 0)
+        if not ch:
+            return
+        embeds = await player_info.build(guild, t["user_id"], await cfg(guild.id))
+        v = player_info.card(embeds, discord.ui.Button(label="Refresh player info", emoji="🔄",
+                                                       style=discord.ButtonStyle.secondary, custom_id="ticket:info"))
+        if t.get("info_msg_id"):
+            old = ch.get_partial_message(t["info_msg_id"])
+            try:
+                await old.edit(view=v)
+                return
+            except discord.NotFound:
+                pass
+            except discord.HTTPException:   # older embed-style message can't become a card → replace it
+                try:
+                    await old.delete()
+                except discord.HTTPException:
+                    pass
+        msg = await ch.send(view=v, allowed_mentions=discord.AllowedMentions.none())
+        await ex("UPDATE tickets SET info_msg_id=%s WHERE id=%s", msg.id, t["id"])
+
+    @tasks.loop(minutes=10)
+    async def info_loop(self):
+        try:
+            await self.repair()
+        except Exception as e:
+            print(f"[tickets] repair: {e!r}")
+        for t in await q("SELECT * FROM tickets WHERE status='open' AND channel_id IS NOT NULL"):
+            g = self.bot.get_guild(t["guild_id"])
+            if not g:
+                continue
+            try:
+                await self.post_info(g, t)
+            except Exception as e:
+                print(f"[tickets] player info #{t['id']}: {e!r}")
+            await asyncio.sleep(1)
+
+    @info_loop.before_loop
+    async def _info_wait(self):
+        await self.bot.wait_until_ready()
 
     # ───────── panel ─────────
     async def post_panel(self, guild: discord.Guild, force_new=False):
@@ -109,6 +160,12 @@ class Tickets(commands.Cog):
                 await inter.response.send_modal(OpenModal(self, types[idx]))
             elif cid == "ticket:claim":
                 await self.claim(inter)
+            elif cid == "ticket:info":
+                t = await self.ticket_here(inter)
+                if not (is_staff(inter.user, c) or inter.user.id == t["user_id"]):
+                    raise EconError("Only staff or the ticket owner can refresh this.")
+                await inter.response.defer()
+                await self.post_info(inter.guild, t)
             elif cid == "ticket:close":
                 v = discord.ui.View(timeout=60)
                 v.add_item(discord.ui.Button(label="Close ticket", style=discord.ButtonStyle.danger, custom_id="ticket:close_yes"))
@@ -154,6 +211,15 @@ class Tickets(commands.Cog):
             await ex("DELETE FROM tickets WHERE id=%s", tid)
             raise EconError("I need the **Manage Channels** permission to open tickets.")
         await ex("UPDATE tickets SET channel_id=%s WHERE id=%s", ch.id, tid)
+        await self.send_welcome(ch, tid, tcat, subject, user, c, staff_mentions)
+        try:
+            await self.post_info(g, {"id": tid, "channel_id": ch.id, "user_id": user.id, "info_msg_id": None})
+        except Exception as err:
+            print(f"[tickets] player info #{tid}: {err!r}")
+        await inter.followup.send(embed=emb("🎫 Ticket opened", f"Head over to {ch.mention}.", GREEN), ephemeral=True)
+        await self.log(g, emb("🎫 Ticket opened", f"#{tid} · {tcat['name']} · {user.mention} · {ch.mention}", GREEN))
+
+    async def send_welcome(self, ch, tid, tcat, subject, user, c, staff_mentions):
         e = discord.Embed(title=f"{tcat.get('emoji') or '🎫'} {tcat['name']} — Ticket #{tid}", description=subject,
                           color=brand_color(c))
         e.set_author(name=str(user), icon_url=user.display_avatar.url)
@@ -165,8 +231,27 @@ class Tickets(commands.Cog):
         v.add_item(discord.ui.Button(label="Close", emoji="🔒", style=discord.ButtonStyle.danger, custom_id="ticket:close"))
         await ch.send(content=f"{user.mention} {' '.join(staff_mentions)}", embed=e, view=v,
                       allowed_mentions=discord.AllowedMentions(users=True, roles=True))
-        await inter.followup.send(embed=emb("🎫 Ticket opened", f"Head over to {ch.mention}.", GREEN), ephemeral=True)
-        await self.log(g, emb("🎫 Ticket opened", f"#{tid} · {tcat['name']} · {user.mention} · {ch.mention}", GREEN))
+
+    async def repair(self):
+        """Tickets whose channel was made but never saved (e.g. the bot restarted mid-open): re-link + finish setting them up."""
+        for t in await q("SELECT * FROM tickets WHERE status='open' AND channel_id IS NULL"):
+            g = self.bot.get_guild(t["guild_id"])
+            if not g:
+                continue
+            ch = next((x for x in g.text_channels if x.name.startswith(f"ticket-{t['id']:04d}-")), None)
+            if not ch:
+                if (dt.datetime.utcnow() - t["created_at"]).total_seconds() > 300:
+                    await ex("UPDATE tickets SET status='closed', closed_at=UTC_TIMESTAMP(), close_reason=%s WHERE id=%s",
+                             "Channel was never created", t["id"])
+                continue
+            await ex("UPDATE tickets SET channel_id=%s WHERE id=%s", ch.id, t["id"])
+            c = await cfg(g.id)
+            if not [m async for m in ch.history(limit=5) if m.author.id == self.bot.user.id]:
+                tcat = next((x for x in c.get("ticket_types") or [] if x.get("name") == t["category"]), {"name": t["category"]})
+                user = g.get_member(t["user_id"]) or await self.bot.fetch_user(t["user_id"])
+                staff = [r.mention for rid in c.get("ticket_staff_roles") or [] if (r := g.get_role(int(rid)))]
+                await self.send_welcome(ch, t["id"], tcat, t["subject"] or "", user, c, staff)
+            await self.log(g, emb("🛠️ Ticket repaired", f"#{t['id']} · {ch.mention} was missing its link — fixed", GOLD))
 
     async def ticket_here(self, inter) -> dict:
         t = await q1("SELECT * FROM tickets WHERE channel_id=%s AND status='open'", inter.channel_id)

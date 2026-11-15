@@ -1,5 +1,5 @@
 """Shared plumbing: database, config, money movement, permissions, formatting."""
-import os, json, re, datetime as dt
+import os, json, re, asyncio, datetime as dt
 from contextlib import asynccontextmanager
 
 import warnings
@@ -83,8 +83,8 @@ DEFAULTS = {
     "start_balance": 5000,
     "log_channel": None,
     "staff_ranks": [
-        {"id": "admin", "name": "Admin", "color": "#f87171", "perms": ["economy", "orgs", "citations", "tickets", "applications", "documents", "setup"], "roles": [], "users": [], "assign_role": False},
-        {"id": "moderator", "name": "Moderator", "color": "#a78bfa", "perms": ["citations", "tickets", "applications"], "roles": [], "users": [], "assign_role": False},
+        {"id": "admin", "name": "Admin", "color": "#f87171", "perms": ["economy", "orgs", "citations", "tickets", "applications", "documents", "discipline", "setup"], "roles": [], "users": [], "assign_role": False},
+        {"id": "moderator", "name": "Moderator", "color": "#a78bfa", "perms": ["citations", "tickets", "applications", "discipline"], "roles": [], "users": [], "assign_role": False},
         {"id": "support", "name": "Support", "color": "#34d399", "perms": ["tickets"], "roles": [], "users": [], "assign_role": False},
     ],
     "payroll_hours": 168,          # auto-payroll interval; 0 = manual only
@@ -95,6 +95,7 @@ DEFAULTS = {
     "citation_days": 7,            # default days to pay a citation
     "business_cost": 0,            # cost to open a business
     "max_businesses": 3,           # per user
+    "max_characters": 3,           # characters per user (each has its own bank, wallet and inventory)
     "dm_receipts": True,
     # ── documents ──
     "docs_channel": None,
@@ -141,7 +142,7 @@ FEATURES = {
     "cad": ("SnailyCAD link", "/cad …"),
 }
 FEATURE_COMMANDS = {
-    "economy": ["balance", "bank", "deposit", "withdraw", "pay", "history", "leaderboard"],
+    "economy": ["balance", "bank", "deposit", "withdraw", "pay", "history", "leaderboard", "character"],
     "business": ["business"], "departments": ["department"], "payroll": ["payroll"], "citations": ["citation"],
     "shop": ["shop", "inventory", "give", "use"], "tickets": ["ticket"], "documents": ["docs", "docs_panel"], "applications": ["apply", "apply_panel"], "cad": ["cad"],
 }
@@ -244,7 +245,8 @@ BURN = ("burn", 0)
 
 
 def acct_label(ref) -> str:
-    return {"wallet": "wallet", "bank": "bank", "org": "account", "mint": "mint", "burn": "burn"}[ref[0]]
+    return {"wallet": "wallet", "bank": "bank", "org": "account", "mint": "mint", "burn": "burn",
+            "cwallet": "character wallet", "cbank": "character bank"}[ref[0]]
 
 
 async def ensure_user(gid: int, uid: int) -> bool:
@@ -257,14 +259,15 @@ async def ensure_user(gid: int, uid: int) -> bool:
 
 
 async def transfer(gid, legs, actor_id, kind, memo="", extra=None, allow_negative=False) -> list[int]:
-    """Atomically apply money legs [(src, dst, amount)]. src/dst = ('wallet'|'bank', uid) | ('org', id) | MINT | BURN.
+    """Atomically apply money legs [(src, dst, amount)]. src/dst = ('wallet'|'bank', uid) | ('org', id) | MINT | BURN
+    | ('cwallet'|'cbank', character id) for a character that isn't the active one.
     `extra(cur)` runs inside the same DB transaction (stock, inventory, etc.)."""
     legs = [(s, d, int(a)) for s, d, a in legs if int(a) > 0]
     c = await cfg(gid)
     ids = []
     async with tx() as cur:
-        refs = sorted({r for s, d, _ in legs for r in (s, d) if r[0] in ("wallet", "bank", "org")},
-                      key=lambda r: (r[0] != "org", r[1], r[0]))
+        refs = sorted({r for s, d, _ in legs for r in (s, d) if r[0] in ("wallet", "bank", "org", "cwallet", "cbank")},
+                      key=lambda r: (r[0] != "org", r[0] in CHAR_COL, r[1], r[0]))
         bal = {}
         for r in refs:
             if r[0] == "org":
@@ -273,6 +276,12 @@ async def transfer(gid, legs, actor_id, kind, memo="", extra=None, allow_negativ
                 if not row:
                     raise EconError("That business/department no longer exists.")
                 bal[r] = row["balance"]
+            elif r[0] in CHAR_COL:
+                await cur.execute("SELECT wallet,bank FROM characters WHERE id=%s AND guild_id=%s FOR UPDATE", (r[1], gid))
+                row = await cur.fetchone()
+                if not row:
+                    raise EconError("That character no longer exists.")
+                bal[r] = row[CHAR_COL[r[0]]]
             else:
                 await cur.execute("SELECT wallet,bank,frozen FROM users WHERE guild_id=%s AND user_id=%s FOR UPDATE",
                                   (gid, r[1]))
@@ -294,6 +303,8 @@ async def transfer(gid, legs, actor_id, kind, memo="", extra=None, allow_negativ
         for r, v in bal.items():
             if r[0] == "org":
                 await cur.execute("UPDATE orgs SET balance=%s WHERE id=%s", (v, r[1]))
+            elif r[0] in CHAR_COL:
+                await cur.execute(f"UPDATE characters SET {CHAR_COL[r[0]]}=%s WHERE id=%s", (v, r[1]))
             else:
                 await cur.execute(f"UPDATE users SET {r[0]}=%s WHERE guild_id=%s AND user_id=%s", (v, gid, r[1]))
         for s, d, a in legs:
@@ -312,6 +323,25 @@ async def get_user(gid, uid):
     return await q1("SELECT * FROM users WHERE guild_id=%s AND user_id=%s", gid, uid)
 
 
+# ───────────────────────── characters ─────────────────────────
+# The ACTIVE character's money/items live in `users` / `user_items` like always, so every feature keeps working.
+# Inactive characters are parked in `characters` (wallet/bank) and `character_items`; switching swaps them.
+CHAR_COL = {"cwallet": "wallet", "cbank": "bank"}
+IMPORT_LOCK = asyncio.Lock()   # shared by the importer and character switching so an import never lands mid-swap
+
+
+async def import_character(gid, uid):
+    """Imports from the old bot belong to the main character. Returns the main character's id when it is parked
+    (another character is active), otherwise None (= the main character is active, use users/user_items)."""
+    r = await q1("SELECT id, active FROM characters WHERE guild_id=%s AND user_id=%s AND is_main=1", gid, uid)
+    return r["id"] if r and not r["active"] else None
+
+
+async def active_character_name(gid, uid) -> str | None:
+    r = await q1("SELECT name FROM characters WHERE guild_id=%s AND user_id=%s AND active=1", gid, uid)
+    return r["name"] if r else None
+
+
 # ───────────────────────── permissions ─────────────────────────
 NONE, MEMBER, HEAD, ADMIN = 0, 1, 2, 3
 
@@ -327,6 +357,7 @@ STAFF_PERMS = {
     "tickets": ("Tickets", "See, claim and close every ticket, read transcripts"),
     "applications": ("Applications", "Review applications and build application forms"),
     "documents": ("Documents", "Create, edit and delete documents, see staff-only documents"),
+    "discipline": ("Strikes & suspensions", "Warn, strike (3 = ban), suspend and unban members; see discipline records"),
     "setup": ("Server setup & settings", "Channels, features, panels, branding, economy settings, bot connection"),
     "staff": ("Staff management", "Create staff ranks and choose who has them"),
 }

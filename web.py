@@ -51,6 +51,7 @@ class Panel:
         self.app = web.Application(middlewares=[self.mw])
         r = self.app.router
         r.add_get("/", self.index)
+        r.add_get("/guide", self.guide)
         r.add_get("/login", self.login)
         r.add_get("/callback", self.callback)
         r.add_get("/logout", self.logout)
@@ -67,6 +68,7 @@ class Panel:
         r.add_post("/api/my/move", self.api_my_move)
         r.add_post("/api/my/pay_citation", self.api_my_pay_citation)
         r.add_get("/api/overview", self.api_overview)
+        r.add_get("/api/activity", self.api_activity)
         r.add_get("/api/users", self.api_users)
         r.add_get("/api/user/{uid}", self.api_user)
         r.add_get("/api/orgs", self.api_orgs)
@@ -90,6 +92,8 @@ class Panel:
         r.add_static("/static", STATIC)
         import web_ext
         web_ext.register(self)
+        import backups
+        backups.register(self)
         self.runner = None
         self._names: dict[int, tuple[float, dict]] = {}
 
@@ -224,6 +228,10 @@ class Panel:
     # ───────── pages ─────────
     async def index(self, request):
         return web.FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache"})
+
+    async def guide(self, request):
+        """Public handbook: step-by-step guides for every bot feature (no login needed)."""
+        return web.FileResponse(os.path.join(STATIC, "guide.html"), headers={"Cache-Control": "no-cache"})
 
     async def login(self, request):
         st = self.state.settings
@@ -419,6 +427,36 @@ fetch('/api/oauth',{method:'POST',headers:{'Content-Type':'application/json','X-
         return web.json_response({"ok": True})
 
     # ───────── admin API ─────────
+    async def api_activity(self, request):
+        """Who's using the bot: active now (15 min), today (24 h), top this week, actions per day (14 days)."""
+        await self.session(request)
+        gid = self.gid
+        try:
+            now_rows = await q("SELECT user_id, MAX(last_seen) seen, SUBSTRING_INDEX(GROUP_CONCAT(last_action ORDER BY last_seen DESC),',',1) act "
+                               "FROM user_activity WHERE guild_id=%s AND last_seen > UTC_TIMESTAMP() - INTERVAL 15 MINUTE "
+                               "GROUP BY user_id ORDER BY seen DESC", gid)
+            day_rows = await q("SELECT user_id, MAX(last_seen) seen, SUM(uses) uses, "
+                               "SUBSTRING_INDEX(GROUP_CONCAT(last_action ORDER BY last_seen DESC),',',1) act FROM user_activity "
+                               "WHERE guild_id=%s AND last_seen > UTC_TIMESTAMP() - INTERVAL 1 DAY GROUP BY user_id ORDER BY seen DESC LIMIT 100", gid)
+            week = await q("SELECT user_id, SUM(uses) uses, COUNT(DISTINCT day) days FROM user_activity WHERE guild_id=%s "
+                           "AND day >= UTC_DATE() - INTERVAL 6 DAY GROUP BY user_id ORDER BY uses DESC LIMIT 15", gid)
+            daily = await q("SELECT day d, SUM(uses) n, COUNT(DISTINCT user_id) u FROM user_activity WHERE guild_id=%s "
+                            "AND day >= UTC_DATE() - INTERVAL 13 DAY GROUP BY day ORDER BY day", gid)
+            totals = await q1("SELECT COUNT(DISTINCT user_id) u, COALESCE(SUM(uses),0) n FROM user_activity WHERE guild_id=%s "
+                              "AND day >= UTC_DATE() - INTERVAL 6 DAY", gid)
+        except Exception:   # table not created yet (activity cog not loaded)
+            now_rows = day_rows = week = daily = []
+            totals = {"u": 0, "n": 0}
+        ids = [r["user_id"] for r in now_rows + day_rows + week]
+        names = await self.whos(ids)
+        iso = lambda d: d.isoformat() + "Z" if d else None
+        return web.json_response({
+            "now": [{"user": names[str(r["user_id"])], "seen": iso(r["seen"]), "act": r["act"]} for r in now_rows],
+            "today": [{"user": names[str(r["user_id"])], "seen": iso(r["seen"]), "uses": int(r["uses"]), "act": r["act"]} for r in day_rows],
+            "week": [{"user": names[str(r["user_id"])], "uses": int(r["uses"]), "days": int(r["days"])} for r in week],
+            "daily": [{"d": str(r["d"]), "n": int(r["n"]), "u": int(r["u"])} for r in daily],
+            "week_users": int(totals["u"] or 0), "week_actions": int(totals["n"] or 0)})
+
     async def api_overview(self, request):
         m, adm, c = await self.session(request, perm="*")
         gid = self.gid
@@ -623,7 +661,7 @@ fetch('/api/oauth',{method:'POST',headers:{'Content-Type':'application/json','X-
         b = await self.body(request)
         tid = int(b["id"])
         r = await q1("SELECT * FROM ledger WHERE guild_id=%s AND id=%s", self.gid, tid)
-        if not r or r["reversed_by"] or r["kind"] == "undo":
+        if not r or r["reversed_by"] or r["kind"] in ("undo", "character"):
             raise EconError("That transaction can't be reversed.")
         for t, i in ((r["src_type"], r["src_id"]), (r["dst_type"], r["dst_id"])):
             if t in ("wallet", "bank"):
@@ -942,8 +980,11 @@ fetch('/api/oauth',{method:'POST',headers:{'Content-Type':'application/json','X-
 
     async def _ledger_rows(self, rows):
         orgs = {o["id"]: o for o in await q("SELECT id,name,kind FROM orgs WHERE guild_id=%s", self.gid)}
+        chars = {ch["id"]: ch["name"] for ch in await q("SELECT id,name FROM characters WHERE guild_id=%s", self.gid)}
 
         async def lab(t, i):
+            if t in ("cwallet", "cbank"):
+                return {"type": t, "id": str(i), "label": f"🎭 {chars.get(i, f'character #{i}')} ({'wallet' if t == 'cwallet' else 'bank'})"}
             if t in ("wallet", "bank"):
                 w = await self.who(i)
                 return {"type": t, "id": str(i), "label": w["name"], "avatar": w["avatar"]}

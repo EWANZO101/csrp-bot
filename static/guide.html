@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1118">
+<link rel="icon" href="/brand/logo">
+<title>CSRP Bot Handbook</title>
+
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: sticky topic rail on the left, readable guide column on the right; rail turns into a chip strip on phones. */
+:root {
+  color-scheme: dark;
+  --bg: #0e1118;          /* night asphalt, faint blue bias */
+  --panel: #151a24;
+  --panel-2: #1b2130;
+  --line: #262e3f;
+  --ink: #e6e9f0;
+  --muted: #98a2b8;
+  --accent: #e3b45c;      /* sodium streetlight amber */
+  --accent-ink: #1a1408;
+  --cool: #7fa3ff;        /* Discord-ish blurple, used for commands */
+  --ok: #5fc88f;
+  --lock: #e07a6b;
+  --f-display: "Sora", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.65 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+a { color: var(--cool); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 40px 80px; display: grid; grid-template-columns: 250px 1fr; gap: 48px; }
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); align-self: start; max-height: calc(100vh - 40px); overflow: auto; display: flex; flex-direction: column; gap: 18px; }
+.brand { font: 700 18px/1.2 var(--f-display); letter-spacing: -0.01em; }
+.brand small { display: block; font: 500 11px/1.4 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-top: 4px; }
+.search { width: 100%; background: var(--panel); border: 1px solid var(--line); color: var(--ink); border-radius: 10px; padding: 10px 12px; font: inherit; }
+.search::placeholder { color: var(--muted); }
+.nav-g { display: flex; flex-direction: column; gap: 2px; }
+.nav-t { font: 600 11px/1 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 6px 0 8px; }
+.nav-i { display: flex; gap: 10px; align-items: center; color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 8px; font-size: 14px; }
+.nav-i:hover { color: var(--ink); background: var(--panel); }
+.nav-i.on { color: var(--ink); background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+.nav-i[hidden] { display: none; }
+main { min-width: 0; display: flex; flex-direction: column; gap: 56px; }
+.hero h1 { font: 700 clamp(30px, 4.4vw, 46px)/1.08 var(--f-display); letter-spacing: -0.025em; margin: 0 0 14px; text-wrap: balance; max-width: 18ch; }
+.hero h1 span { color: var(--accent); }
+.hero p { color: var(--muted); max-width: 62ch; margin: 0 0 22px; font-size: 16px; }
+.quick { display: flex; flex-wrap: wrap; gap: 10px; }
+.chip { font: 500 13px/1 var(--f-mono); color: var(--cool); background: rgba(127,163,255,.08); border: 1px solid rgba(127,163,255,.22); padding: 8px 11px; border-radius: 8px; }
+h2 { font: 600 24px/1.2 var(--f-display); letter-spacing: -0.015em; margin: 0 0 6px; text-wrap: balance; }
+.sec-head p { color: var(--muted); margin: 0 0 22px; max-width: 62ch; }
+.eyebrow { font: 600 11px/1 var(--f-body); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; display: block; }
+.cats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; }
+.cat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 8px; }
+.cat-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.cat h3 { font: 600 15px/1.3 var(--f-display); margin: 0; }
+.badge { font: 600 11px/1 var(--f-body); letter-spacing: .06em; padding: 5px 8px; border-radius: 999px; white-space: nowrap; }
+.badge.open { color: var(--ok); background: rgba(95,200,143,.1); }
+.badge.lock { color: var(--lock); background: rgba(224,122,107,.12); }
+.cat ul { list-style: none; margin: 0; padding: 0; }
+.cat li { display: flex; flex-direction: column; padding: 9px 0; border-top: 1px solid var(--line); }
+.cat li:first-child { border-top: 0; }
+.ch { font: 500 13px/1.4 var(--f-mono); color: var(--ink); }
+.ch-d { color: var(--muted); font-size: 13.5px; }
+.guides { display: flex; flex-direction: column; gap: 14px; }
+.guide { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; scroll-margin-top: 20px; }
+.guide[hidden], section[hidden] { display: none; }
+main, .guide, .cat { min-width: 0; }
+.guide header { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px; }
+.g-emoji { font-size: 22px; line-height: 1; width: 42px; height: 42px; display: grid; place-items: center; background: var(--panel-2); border-radius: 10px; flex: none; }
+.guide h3 { font: 600 18px/1.3 var(--f-display); margin: 2px 0 2px; }
+.sum { color: var(--muted); margin: 0; font-size: 14px; }
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: flex; flex-direction: column; gap: 10px; max-width: 72ch; }
+.steps li { overflow-wrap: anywhere; counter-increment: s; display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: baseline; }
+.steps li::before { content: counter(s); font: 600 12px/1 var(--f-mono); color: var(--accent-ink); background: var(--accent); width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; transform: translateY(3px); }
+code { font: 500 12.5px/1.5 var(--f-mono); color: var(--cool); background: rgba(127,163,255,.09); padding: 2px 6px; border-radius: 5px; overflow-wrap: anywhere; }
+strong { color: #fff; font-weight: 600; }
+.tip { margin: 16px 0 0; padding: 12px 14px; background: rgba(227,180,92,.07); border: 1px solid rgba(227,180,92,.2); border-radius: 10px; color: var(--ink); font-size: 14px; display: flex; gap: 10px; align-items: baseline; }
+.st, .tt { min-width: 0; }
+.tip-k { font: 600 10.5px/1 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); flex: none; }
+.empty { color: var(--muted); padding: 18px; border: 1px dashed var(--line); border-radius: 12px; }
+main::after { content: ""; display: block; min-height: 55vh; }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 20px; }
+@media (max-width: 860px) {
+  .wrap { grid-template-columns: 1fr; gap: 28px; padding-block: 24px 60px; }
+  .rail { position: static; max-height: none; overflow: visible; }
+  .nav-g { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+  .nav-t { display: none; }
+  .nav-i { white-space: nowrap; background: var(--panel); border: 1px solid var(--line); }
+  .guide { padding: 18px; }
+}
+
+.back { color: var(--muted); text-decoration: none; font-size: 13px; }
+.back:hover { color: var(--ink); }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <aside class="rail" aria-label="Topics">
+    <a class="back" href="/">← Back to the panel</a>
+    <div class="brand">CSRP Bot Handbook<small>Economy · Hospital · Utilities</small></div>
+    <input id="q" class="search" type="search" placeholder="Search guides, e.g. autopay" aria-label="Search guides">
+    <nav class="nav-g" aria-label="Player guides"><div class="nav-t">Players</div><a class="nav-i" href="#player-start" data-target="player-start"><span aria-hidden="true">👋</span>Getting started</a>
+<a class="nav-i" href="#player-money" data-target="player-money"><span aria-hidden="true">💵</span>Bank, wallet &amp; paying people</a>
+<a class="nav-i" href="#player-chars" data-target="player-chars"><span aria-hidden="true">🎭</span>Characters</a>
+<a class="nav-i" href="#player-shop" data-target="player-shop"><span aria-hidden="true">🛍️</span>Shopping</a>
+<a class="nav-i" href="#player-inv" data-target="player-inv"><span aria-hidden="true">🎒</span>Inventory, giving &amp; using items</a>
+<a class="nav-i" href="#player-biz" data-target="player-biz"><span aria-hidden="true">🏢</span>Owning a business</a>
+<a class="nav-i" href="#player-job" data-target="player-job"><span aria-hidden="true">💼</span>Getting paid (payroll)</a>
+<a class="nav-i" href="#player-fines" data-target="player-fines"><span aria-hidden="true">🧾</span>Citations &amp; fines</a>
+<a class="nav-i" href="#player-hospital" data-target="player-hospital"><span aria-hidden="true">🏥</span>Hospital (patient)</a>
+<a class="nav-i" href="#player-utilities" data-target="player-utilities"><span aria-hidden="true">💡</span>Utilities (power, water, phone…)</a>
+<a class="nav-i" href="#player-property" data-target="player-property"><span aria-hidden="true">🏠</span>Requesting a property or business</a>
+<a class="nav-i" href="#player-help" data-target="player-help"><span aria-hidden="true">🎫</span>Support, applications &amp; documents</a>
+<a class="nav-i" href="#player-events" data-target="player-events"><span aria-hidden="true">🗓️</span>Events &amp; who&#x27;s online</a></nav>
+    <nav class="nav-g" aria-label="Staff guides"><div class="nav-t">Staff</div><a class="nav-i" href="#staff-access" data-target="staff-access"><span aria-hidden="true">🔑</span>Giving someone staff access</a>
+<a class="nav-i" href="#staff-panel" data-target="staff-panel"><span aria-hidden="true">🛠️</span>Using the staff panel</a>
+<a class="nav-i" href="#staff-money" data-target="staff-money"><span aria-hidden="true">💰</span>Money: print, remove, freeze, undo</a>
+<a class="nav-i" href="#staff-items" data-target="staff-items"><span aria-hidden="true">📦</span>Moving items between players</a>
+<a class="nav-i" href="#staff-orgs" data-target="staff-orgs"><span aria-hidden="true">🏢</span>Businesses, departments &amp; shops</a>
+<a class="nav-i" href="#staff-payroll" data-target="staff-payroll"><span aria-hidden="true">💼</span>Payroll</a>
+<a class="nav-i" href="#staff-hospital" data-target="staff-hospital"><span aria-hidden="true">🏥</span>Running the hospital</a>
+<a class="nav-i" href="#staff-utilities" data-target="staff-utilities"><span aria-hidden="true">💡</span>Setting up utilities</a>
+<a class="nav-i" href="#staff-schedule" data-target="staff-schedule"><span aria-hidden="true">🗓️</span>Scheduling things</a>
+<a class="nav-i" href="#staff-requests" data-target="staff-requests"><span aria-hidden="true">📝</span>Business &amp; property requests</a>
+<a class="nav-i" href="#staff-import" data-target="staff-import"><span aria-hidden="true">📥</span>Importing from the old bot</a>
+<a class="nav-i" href="#staff-accounts" data-target="staff-accounts"><span aria-hidden="true">📊</span>Player accounts directory</a>
+<a class="nav-i" href="#staff-chars" data-target="staff-chars"><span aria-hidden="true">🎭</span>Characters (staff)</a>
+<a class="nav-i" href="#staff-fines" data-target="staff-fines"><span aria-hidden="true">🚔</span>Issuing citations</a>
+<a class="nav-i" href="#staff-panels" data-target="staff-panels"><span aria-hidden="true">🧩</span>Tickets, applications &amp; documents</a></nav>
+  </aside>
+
+  <main>
+    <section class="hero">
+      <span class="eyebrow">CSRP V2 · Economy Bot v2</span>
+      <h1>Everything the bot does, <span>step by step.</span></h1>
+      <p>Pick a topic on the left or search for what you need. Most things have a button in a Discord channel, so you rarely have to type a command. When you do, copy one of the examples.</p>
+      <div class="quick"><span class="chip">/balance</span><span class="chip">/pay user:@name amount:250</span><span class="chip">/shop browse</span><span class="chip">/character switch</span><span class="chip">/citation pay id:12</span></div>
+    </section>
+
+    <section id="channels">
+      <div class="sec-head"><span class="eyebrow">Where things are</span><h2>Channel map</h2><p>Every channel the bot runs, grouped the way they appear in Discord.</p></div>
+      <div class="cats"><div class="cat"><div class="cat-h"><h3>📋 CSRP Info</h3><span class="badge open">Everyone</span></div><ul><li><span class="ch">#📚・documents</span><span class="ch-d">Rules, SOPs, penal codes</span></li><li><span class="ch">#🎫・support</span><span class="ch-d">Open a support ticket</span></li><li><span class="ch">#📝・applications</span><span class="ch-d">Apply for jobs and roles</span></li></ul></div><div class="cat"><div class="cat-h"><h3>🎮 CSRP Player Hub</h3><span class="badge open">Everyone</span></div><ul><li><span class="ch">#📖・docs</span><span class="ch-d">This guide, inside Discord</span></li><li><span class="ch">#🎭・characters</span><span class="ch-d">Create and switch characters</span></li><li><span class="ch">#🏥・hospital</span><span class="ch-d">Patients, live bills, admit and discharge</span></li><li><span class="ch">#🗓️・schedule</span><span class="ch-d">Upcoming events and countdowns</span></li><li><span class="ch">#📈・bot-activity</span><span class="ch-d">Who is using the bot right now</span></li><li><span class="ch">#💡・utilities</span><span class="ch-d">Payment menu, services and bills (opens soon)</span></li><li><span class="ch">#🏢・business-requests</span><span class="ch-d">Ask staff for a business</span></li><li><span class="ch">#🏠・property-requests</span><span class="ch-d">Ask staff for a property</span></li><li><span class="ch">#🏘️・property-list</span><span class="ch-d">Every property, available or owned</span></li></ul></div><div class="cat"><div class="cat-h"><h3>🔒 CSRP Staff</h3><span class="badge lock">Staff only</span></div><ul><li><span class="ch">#📒・bot-logs</span><span class="ch-d">Every money, item and import change</span></li><li><span class="ch">#🗂・ticket-transcripts</span><span class="ch-d">Closed ticket records</span></li><li><span class="ch">#🛠️・staff-panel</span><span class="ch-d">Buttons for every staff action, plus Hospital admin</span></li><li><span class="ch">#📊・player-accounts</span><span class="ch-d">Everyone&#x27;s wallet, bank and items</span></li><li><span class="ch">#💡・utilities-admin</span><span class="ch-d">Companies, plans and billing rules</span></li><li><span class="ch">#🏢・business-requests-admin</span><span class="ch-d">Approve or deny business requests</span></li><li><span class="ch">#🏠・property-requests-admin</span><span class="ch-d">Approve or deny property requests</span></li></ul></div></div>
+    </section>
+
+    <section id="players">
+      <div class="sec-head"><span class="eyebrow">For players</span><h2>Player guides</h2><p>Money, characters, shopping, jobs, the hospital and your bills.</p></div>
+      <div class="guides"><article class="guide" id="player-start" data-aud="player" data-words="getting started your account, starting money and where things are you already have an account — every member gets one with a **starting balance in the bank**. type **`/balance`** to see your 💵 wallet and 🏦 bank. type **`/bank`** for a menu with buttons for everything money-related. browse the **🎮 csrp player hub** channels — each one has buttons, so you rarely need to type commands. stuck? open a ticket in **🎫・support**.">
+  <header><span class="g-emoji" aria-hidden="true">👋</span><div><h3>Getting started</h3><p class="sum">Your account, starting money and where things are</p></div></header>
+  <ol class="steps"><li><span class="st">You already have an account — every member gets one with a <strong>starting balance in the bank</strong>.</span></li>
+<li><span class="st">Type <strong><code>/balance</code></strong> to see your 💵 wallet and 🏦 bank.</span></li>
+<li><span class="st">Type <strong><code>/bank</code></strong> for a menu with buttons for everything money-related.</span></li>
+<li><span class="st">Browse the <strong>🎮 CSRP Player Hub</strong> channels — each one has buttons, so you rarely need to type commands.</span></li>
+<li><span class="st">Stuck? Open a ticket in <strong>🎫・support</strong>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Money in your <strong>wallet</strong> can be spent anywhere; money in the <strong>bank</strong> is safer.</span></p>
+</article>
+<article class="guide" id="player-money" data-aud="player" data-words="bank, wallet &amp; paying people deposit, withdraw, pay someone, see history **deposit** wallet → bank: `/deposit amount:500` (or `all`). **withdraw** bank → wallet: `/withdraw amount:500`. **pay someone**: `/pay user:@name amount:250` — you can add a note. **see what happened**: `/history` shows your recent transactions. **richest players**: `/leaderboard`.">
+  <header><span class="g-emoji" aria-hidden="true">💵</span><div><h3>Bank, wallet &amp; paying people</h3><p class="sum">Deposit, withdraw, pay someone, see history</p></div></header>
+  <ol class="steps"><li><span class="st"><strong>Deposit</strong> wallet → bank: <code>/deposit amount:500</code> (or <code>all</code>).</span></li>
+<li><span class="st"><strong>Withdraw</strong> bank → wallet: <code>/withdraw amount:500</code>.</span></li>
+<li><span class="st"><strong>Pay someone</strong>: <code>/pay user:@name amount:250</code> — you can add a note.</span></li>
+<li><span class="st"><strong>See what happened</strong>: <code>/history</code> shows your recent transactions.</span></li>
+<li><span class="st"><strong>Richest players</strong>: <code>/leaderboard</code>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Amounts like <code>5k</code>, <code>2.5m</code> and <code>all</code> work everywhere.</span></p>
+</article>
+<article class="guide" id="player-chars" data-aud="player" data-words="characters play several characters, each with their own money &amp; items go to **🎭・characters** and press **➕ create** (or `/character create name:tony`). choose whether to **switch to them now**. new characters start with the starting balance and an empty inventory. press **🔁 switch** any time to change who you&#x27;re playing. the other character&#x27;s money and items wait safely. **📋 my characters** shows each one&#x27;s wallet, bank and items. **✏️ rename** or **🗑️ delete** extra characters (delete asks first; the main character can&#x27;t be deleted).">
+  <header><span class="g-emoji" aria-hidden="true">🎭</span><div><h3>Characters</h3><p class="sum">Play several characters, each with their own money &amp; items</p></div></header>
+  <ol class="steps"><li><span class="st">Go to <strong>🎭・characters</strong> and press <strong>➕ Create</strong> (or <code>/character create name:Tony</code>).</span></li>
+<li><span class="st">Choose whether to <strong>switch to them now</strong>. New characters start with the starting balance and an empty inventory.</span></li>
+<li><span class="st">Press <strong>🔁 Switch</strong> any time to change who you're playing. The other character's money and items wait safely.</span></li>
+<li><span class="st"><strong>📋 My characters</strong> shows each one's wallet, bank and items.</span></li>
+<li><span class="st"><strong>✏️ Rename</strong> or <strong>🗑️ Delete</strong> extra characters (delete asks first; the main character can't be deleted).</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Money imported from the old bot always goes to your <strong>main</strong> character.</span></p>
+</article>
+<article class="guide" id="player-shop" data-aud="player" data-words="shopping find and buy things from businesses see everything for sale: **`/shop all`**. look inside one shop: **`/shop browse store:`** and start typing the business name — pick from the list. buy from the menu that appears, or type **`/shop buy store:… item:… quantity:1`**. the money comes out of your **bank** and the item goes into your inventory.">
+  <header><span class="g-emoji" aria-hidden="true">🛍️</span><div><h3>Shopping</h3><p class="sum">Find and buy things from businesses</p></div></header>
+  <ol class="steps"><li><span class="st">See everything for sale: <strong><code>/shop all</code></strong>.</span></li>
+<li><span class="st">Look inside one shop: <strong><code>/shop browse store:</code></strong> and start typing the business name — pick from the list.</span></li>
+<li><span class="st">Buy from the menu that appears, or type <strong><code>/shop buy store:… item:… quantity:1</code></strong>.</span></li>
+<li><span class="st">The money comes out of your <strong>bank</strong> and the item goes into your inventory.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">If a shop says <em>out of stock</em>, ask the owner to restock.</span></p>
+</article>
+<article class="guide" id="player-inv" data-aud="player" data-words="inventory, giving &amp; using items see your items, give them away, use them see your items: **`/inventory`** (or `/inventory user:@name` for someone else). give an item: **`/give user:@name item:`** — start typing and pick the item, then the quantity. use an item: **`/use item:`** — some items give you a role for a while, some get used up.">
+  <header><span class="g-emoji" aria-hidden="true">🎒</span><div><h3>Inventory, giving &amp; using items</h3><p class="sum">See your items, give them away, use them</p></div></header>
+  <ol class="steps"><li><span class="st">See your items: <strong><code>/inventory</code></strong> (or <code>/inventory user:@name</code> for someone else).</span></li>
+<li><span class="st">Give an item: <strong><code>/give user:@name item:</code></strong> — start typing and pick the item, then the quantity.</span></li>
+<li><span class="st">Use an item: <strong><code>/use item:</code></strong> — some items give you a role for a while, some get used up.</span></li></ol>
+</article>
+<article class="guide" id="player-biz" data-aud="player" data-words="owning a business get a business, manage money, staff and stock ask for a business in **🏢・business-requests** (press 📝) — staff approve it and it&#x27;s yours. put money in: `/business deposit` · take it out: `/business withdraw` · pay someone: `/business send`. add things to sell: `/business item add` (price, stock, description). edit with `/business item edit`. give staff access: `/business role add` (head or member) and pay them with `/payroll add`. see it all: `/business info` · hand it over: `/business transfer_ownership`.">
+  <header><span class="g-emoji" aria-hidden="true">🏢</span><div><h3>Owning a business</h3><p class="sum">Get a business, manage money, staff and stock</p></div></header>
+  <ol class="steps"><li><span class="st">Ask for a business in <strong>🏢・business-requests</strong> (press 📝) — staff approve it and it's yours.</span></li>
+<li><span class="st">Put money in: <code>/business deposit</code> · take it out: <code>/business withdraw</code> · pay someone: <code>/business send</code>.</span></li>
+<li><span class="st">Add things to sell: <code>/business item add</code> (price, stock, description). Edit with <code>/business item edit</code>.</span></li>
+<li><span class="st">Give staff access: <code>/business role add</code> (head or member) and pay them with <code>/payroll add</code>.</span></li>
+<li><span class="st">See it all: <code>/business info</code> · hand it over: <code>/business transfer_ownership</code>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Shop sales go straight into your business account.</span></p>
+</article>
+<article class="guide" id="player-job" data-aud="player" data-words="getting paid (payroll) how wages work your boss adds you with `/payroll add` and sets your pay. pay arrives in your **bank** automatically on payday (or when they run `/payroll run`). you get a dm each payday. check with `/history`.">
+  <header><span class="g-emoji" aria-hidden="true">💼</span><div><h3>Getting paid (payroll)</h3><p class="sum">How wages work</p></div></header>
+  <ol class="steps"><li><span class="st">Your boss adds you with <code>/payroll add</code> and sets your pay.</span></li>
+<li><span class="st">Pay arrives in your <strong>bank</strong> automatically on payday (or when they run <code>/payroll run</code>).</span></li>
+<li><span class="st">You get a DM each payday. Check with <code>/history</code>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Not paid? The business may be out of money — tell your boss.</span></p>
+</article>
+<article class="guide" id="player-fines" data-aud="player" data-words="citations &amp; fines see and pay fines see your fines: **`/citation mine`**. pay one: **`/citation pay id:12`** (from your bank), or press **💳 pay now** in the dm you got. pay before the due date — overdue fines get a **late fee**.">
+  <header><span class="g-emoji" aria-hidden="true">🧾</span><div><h3>Citations &amp; fines</h3><p class="sum">See and pay fines</p></div></header>
+  <ol class="steps"><li><span class="st">See your fines: <strong><code>/citation mine</code></strong>.</span></li>
+<li><span class="st">Pay one: <strong><code>/citation pay id:12</code></strong> (from your bank), or press <strong>💳 Pay now</strong> in the DM you got.</span></li>
+<li><span class="st">Pay before the due date — overdue fines get a <strong>late fee</strong>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Medical bills from the hospital show here too.</span></p>
+</article>
+<article class="guide" id="player-hospital" data-aud="player" data-words="hospital (patient) what happens when you&#x27;re admitted and how to pay when medics admit you, you get a dm and the clock starts — you&#x27;re billed **per second** while admitted. every 30 seconds the cost so far is taken from your **bank**. if you run out, the rest becomes debt. check your bill any time: **💳 my bill** in **🏥・hospital** (or `/hospital bill`). when you&#x27;re discharged, anything unpaid becomes a **medical bill** — pay it with the 💳 button in the dm or `/citation pay`.">
+  <header><span class="g-emoji" aria-hidden="true">🏥</span><div><h3>Hospital (patient)</h3><p class="sum">What happens when you're admitted and how to pay</p></div></header>
+  <ol class="steps"><li><span class="st">When medics admit you, you get a DM and the clock starts — you're billed <strong>per second</strong> while admitted.</span></li>
+<li><span class="st">Every 30 seconds the cost so far is taken from your <strong>bank</strong>. If you run out, the rest becomes debt.</span></li>
+<li><span class="st">Check your bill any time: <strong>💳 My bill</strong> in <strong>🏥・hospital</strong> (or <code>/hospital bill</code>).</span></li>
+<li><span class="st">When you're discharged, anything unpaid becomes a <strong>medical bill</strong> — pay it with the 💳 button in the DM or <code>/citation pay</code>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Keep some money in the bank — it's used first.</span></p>
+</article>
+<article class="guide" id="player-utilities" data-aud="player" data-words="utilities (power, water, phone…) set up payment, sign up, pay bills in **💡・utilities** press **💳 payment menu** first — pick **bank autopay**, **wallet autopay** or **manual**, plus a backup. press **save**. press **➕ sign up**, choose a company, then a plan, then **sign up**. bills arrive every cycle. with autopay they&#x27;re paid automatically (and cheaper!). **📄 my bills** shows what you owe — pay one or **pay all**. late? a late fee is added, and after a while the service is **shut off**. pay up, then press **🔌 reconnect** in **🔌 my services**.">
+  <header><span class="g-emoji" aria-hidden="true">💡</span><div><h3>Utilities (power, water, phone…)</h3><p class="sum">Set up payment, sign up, pay bills</p></div></header>
+  <ol class="steps"><li><span class="st">In <strong>💡・utilities</strong> press <strong>💳 Payment menu</strong> first — pick <strong>bank autopay</strong>, <strong>wallet autopay</strong> or <strong>manual</strong>, plus a backup. Press <strong>Save</strong>.</span></li>
+<li><span class="st">Press <strong>➕ Sign up</strong>, choose a company, then a plan, then <strong>Sign up</strong>.</span></li>
+<li><span class="st">Bills arrive every cycle. With autopay they're paid automatically (and cheaper!).</span></li>
+<li><span class="st"><strong>📄 My bills</strong> shows what you owe — pay one or <strong>Pay all</strong>.</span></li>
+<li><span class="st">Late? A late fee is added, and after a while the service is <strong>shut off</strong>. Pay up, then press <strong>🔌 Reconnect</strong> in <strong>🔌 My services</strong>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Autopay retries automatically as soon as you have money.</span></p>
+</article>
+<article class="guide" id="player-property" data-aud="player" data-words="requesting a property or business ask staff for a house or a business go to **🏠・property-requests** (or **🏢・business-requests**). press **📝** and fill in what you want. staff approve or deny it — you get a dm either way. there may be a price, taken from your bank. approved properties appear in your inventory; approved businesses are yours to run.">
+  <header><span class="g-emoji" aria-hidden="true">🏠</span><div><h3>Requesting a property or business</h3><p class="sum">Ask staff for a house or a business</p></div></header>
+  <ol class="steps"><li><span class="st">Go to <strong>🏠・property-requests</strong> (or <strong>🏢・business-requests</strong>).</span></li>
+<li><span class="st">Press <strong>📝</strong> and fill in what you want.</span></li>
+<li><span class="st">Staff approve or deny it — you get a DM either way. There may be a price, taken from your bank.</span></li>
+<li><span class="st">Approved properties appear in your inventory; approved businesses are yours to run.</span></li></ol>
+</article>
+<article class="guide" id="player-help" data-aud="player" data-words="support, applications &amp; documents get help, apply for jobs, read rules **need help?** open a ticket in **🎫・support**. **apply** for a job or role: **📝・applications** or `/apply`. **rules, sops, penal codes**: **📚・documents** or `/docs`.">
+  <header><span class="g-emoji" aria-hidden="true">🎫</span><div><h3>Support, applications &amp; documents</h3><p class="sum">Get help, apply for jobs, read rules</p></div></header>
+  <ol class="steps"><li><span class="st"><strong>Need help?</strong> Open a ticket in <strong>🎫・support</strong>.</span></li>
+<li><span class="st"><strong>Apply</strong> for a job or role: <strong>📝・applications</strong> or <code>/apply</code>.</span></li>
+<li><span class="st"><strong>Rules, SOPs, penal codes</strong>: <strong>📚・documents</strong> or <code>/docs</code>.</span></li></ol>
+</article>
+<article class="guide" id="player-events" data-aud="player" data-words="events &amp; who&#x27;s online server events and bot activity **🗓️・schedule** shows upcoming events with countdowns in *your* timezone, plus reminders. **📈・bot-activity** shows who&#x27;s using the bot right now and the most active this week. type `/active` to see it privately.">
+  <header><span class="g-emoji" aria-hidden="true">🗓️</span><div><h3>Events &amp; who&#x27;s online</h3><p class="sum">Server events and bot activity</p></div></header>
+  <ol class="steps"><li><span class="st"><strong>🗓️・schedule</strong> shows upcoming events with countdowns in <em>your</em> timezone, plus reminders.</span></li>
+<li><span class="st"><strong>📈・bot-activity</strong> shows who's using the bot right now and the most active this week.</span></li>
+<li><span class="st">Type <code>/active</code> to see it privately.</span></li></ol>
+</article></div>
+    </section>
+
+    <section id="staff">
+      <div class="sec-head"><span class="eyebrow">For staff</span><h2>Staff guides</h2><p>Setup and admin. Every staff button and command checks your permissions, so reading these is safe for anyone.</p></div>
+      <div class="guides"><article class="guide" id="staff-access" data-aud="staff" data-words="giving someone staff access staff ranks and who can see staff channels open the web panel **https://bot.snailyapp.com** and log in with discord. go to **staff** → pick a rank (admin, moderator, support…) → add their **role** or **user**. each rank has permissions: *citizens &amp; money*, *businesses*, *citations*, *server setup*… in discord run **`/staff_panel`** and **`/player_accounts`** so the staff channels let them in.">
+  <header><span class="g-emoji" aria-hidden="true">🔑</span><div><h3>Giving someone staff access</h3><p class="sum">Staff ranks and who can see staff channels</p></div></header>
+  <ol class="steps"><li><span class="st">Open the web panel <strong><a href="https://bot.snailyapp.com" target="_blank" rel="noopener">https://bot.snailyapp.com</a></strong> and log in with Discord.</span></li>
+<li><span class="st">Go to <strong>Staff</strong> → pick a rank (Admin, Moderator, Support…) → add their <strong>role</strong> or <strong>user</strong>.</span></li>
+<li><span class="st">Each rank has permissions: <em>Citizens &amp; money</em>, <em>Businesses</em>, <em>Citations</em>, <em>Server setup</em>…</span></li>
+<li><span class="st">In Discord run <strong><code>/staff_panel</code></strong> and <strong><code>/player_accounts</code></strong> so the staff channels let them in.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Bot owners always have every permission.</span></p>
+</article>
+<article class="guide" id="staff-panel" data-aud="staff" data-words="using the staff panel everything in #🛠️・staff-panel go to **🛠️・staff-panel** and press a button — a form pops up. **player** boxes: start typing a name and pick from the list. **business / item** boxes: type part of the name — the closest match is used (the reply tells you which). replies are only visible to you; money and item changes are posted to **📒・bot-logs**.">
+  <header><span class="g-emoji" aria-hidden="true">🛠️</span><div><h3>Using the staff panel</h3><p class="sum">Everything in #🛠️・staff-panel</p></div></header>
+  <ol class="steps"><li><span class="st">Go to <strong>🛠️・staff-panel</strong> and press a button — a form pops up.</span></li>
+<li><span class="st"><strong>Player</strong> boxes: start typing a name and pick from the list.</span></li>
+<li><span class="st"><strong>Business / item</strong> boxes: type part of the name — the closest match is used (the reply tells you which).</span></li>
+<li><span class="st">Replies are only visible to you; money and item changes are posted to <strong>📒・bot-logs</strong>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">The 🏥 Hospital admin card lives in the same channel.</span></p>
+</article>
+<article class="guide" id="staff-money" data-aud="staff" data-words="money: print, remove, freeze, undo fix balances and mistakes **give money**: 💰 print money in the staff panel, or `/admin print amount:5000 user:@name`. **take money**: 🔥 remove money, or `/admin remove`. **freeze** an account (blocks spending): 🧊 in the panel or `/admin freeze`. **undo** a transaction: find its # with `/admin audit` (or 🧾 transactions), then `/admin undo id:123`.">
+  <header><span class="g-emoji" aria-hidden="true">💰</span><div><h3>Money: print, remove, freeze, undo</h3><p class="sum">Fix balances and mistakes</p></div></header>
+  <ol class="steps"><li><span class="st"><strong>Give money</strong>: 💰 Print money in the staff panel, or <code>/admin print amount:5000 user:@name</code>.</span></li>
+<li><span class="st"><strong>Take money</strong>: 🔥 Remove money, or <code>/admin remove</code>.</span></li>
+<li><span class="st"><strong>Freeze</strong> an account (blocks spending): 🧊 in the panel or <code>/admin freeze</code>.</span></li>
+<li><span class="st"><strong>Undo</strong> a transaction: find its # with <code>/admin audit</code> (or 🧾 Transactions), then <code>/admin undo id:123</code>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">For a business, leave the player empty and type the business name.</span></p>
+</article>
+<article class="guide" id="staff-items" data-aud="staff" data-words="moving items between players fix inventories or transfer everything **📦 move items** in the staff panel (or `/admin move_items`). pick **from** and **to** players. type an item, or leave it **empty to move everything**. optional quantity — empty means all of it. also on the web panel: citizens → click a player → *move items*.">
+  <header><span class="g-emoji" aria-hidden="true">📦</span><div><h3>Moving items between players</h3><p class="sum">Fix inventories or transfer everything</p></div></header>
+  <ol class="steps"><li><span class="st"><strong>📦 Move items</strong> in the staff panel (or <code>/admin move_items</code>).</span></li>
+<li><span class="st">Pick <strong>from</strong> and <strong>to</strong> players. Type an item, or leave it <strong>empty to move everything</strong>.</span></li>
+<li><span class="st">Optional quantity — empty means all of it.</span></li>
+<li><span class="st">Also on the web panel: Citizens → click a player → <em>Move items</em>.</span></li></ol>
+</article>
+<article class="guide" id="staff-orgs" data-aud="staff" data-words="businesses, departments &amp; shops create them and set up what they sell create a department: `/department create` · a business: `/business create` (or approve a business request). add shop items: **🛒 add / edit shop item** in the staff panel, or `/business item add`. give an item from stock to a player for free: **🎁 give item from stock**. change an owner: **👑 set business owner**. see details: **🏢 business info**.">
+  <header><span class="g-emoji" aria-hidden="true">🏢</span><div><h3>Businesses, departments &amp; shops</h3><p class="sum">Create them and set up what they sell</p></div></header>
+  <ol class="steps"><li><span class="st">Create a department: <code>/department create</code> · a business: <code>/business create</code> (or approve a business request).</span></li>
+<li><span class="st">Add shop items: <strong>🛒 Add / edit shop item</strong> in the staff panel, or <code>/business item add</code>.</span></li>
+<li><span class="st">Give an item from stock to a player for free: <strong>🎁 Give item from stock</strong>.</span></li>
+<li><span class="st">Change an owner: <strong>👑 Set business owner</strong>. See details: <strong>🏢 Business info</strong>.</span></li></ol>
+</article>
+<article class="guide" id="staff-payroll" data-aud="staff" data-words="payroll paying staff of businesses &amp; departments add someone: `/payroll add org:… user:@name amount:500`. pay now: `/payroll run`. automatic payroll runs every *n* hours — change with `/admin config key:payroll_hours value:168` (0 = manual). want a fixed day/time instead? use `/schedule payroll when:fri 18:00 repeat:weekly` and set payroll_hours to 0.">
+  <header><span class="g-emoji" aria-hidden="true">💼</span><div><h3>Payroll</h3><p class="sum">Paying staff of businesses &amp; departments</p></div></header>
+  <ol class="steps"><li><span class="st">Add someone: <code>/payroll add org:… user:@name amount:500</code>.</span></li>
+<li><span class="st">Pay now: <code>/payroll run</code>. Automatic payroll runs every <em>N</em> hours — change with <code>/admin config key:payroll_hours value:168</code> (0 = manual).</span></li>
+<li><span class="st">Want a fixed day/time instead? Use <code>/schedule payroll when:fri 18:00 repeat:Weekly</code> and set payroll_hours to 0.</span></li></ol>
+</article>
+<article class="guide" id="staff-hospital" data-aud="staff" data-words="running the hospital billing settings, admitting, bills in **🛠️・staff-panel → 🏥 hospital admin** press **⚙️ billing settings**: set the **hospital department** (who gets paid), cost per second, admission fee, cap and days to pay. medics use **🏥 admit patient** / **🩺 discharge** in **🏥・hospital** (or `/hospital admit|discharge`). medics = members of the hospital department, or staff with citations / citizens &amp; money. see unpaid bills (**🧾**), cancel one (**💸 waive a bill**) or view **📊 stats** in the admin card.">
+  <header><span class="g-emoji" aria-hidden="true">🏥</span><div><h3>Running the hospital</h3><p class="sum">Billing settings, admitting, bills</p></div></header>
+  <ol class="steps"><li><span class="st">In <strong>🛠️・staff-panel → 🏥 Hospital admin</strong> press <strong>⚙️ Billing settings</strong>: set the <strong>hospital department</strong> (who gets paid), cost per second, admission fee, cap and days to pay.</span></li>
+<li><span class="st">Medics use <strong>🏥 Admit patient</strong> / <strong>🩺 Discharge</strong> in <strong>🏥・hospital</strong> (or <code>/hospital admit|discharge</code>).</span></li>
+<li><span class="st">Medics = members of the hospital department, or staff with Citations / Citizens &amp; money.</span></li>
+<li><span class="st">See unpaid bills (<strong>🧾</strong>), cancel one (<strong>💸 Waive a bill</strong>) or view <strong>📊 Stats</strong> in the admin card.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">If no department is set, medical payments just disappear.</span></p>
+</article>
+<article class="guide" id="staff-utilities" data-aud="staff" data-words="setting up utilities companies, plans, rules, opening it up open **💡・utilities-admin** and press **🌱 starter pack** — 7 companies with plans are created. press **🏢 company** for each one and set the **business/department that gets paid**. adjust **📦 plans** (price, cycle, usage swing, setup fee) and **⚙️ billing rules** (late fee, days to pay, shut-off, reconnect fee, autopay discount). test it yourself in **💡・utilities** (staff can use it while locked). when ready press **🔓 open to players**.">
+  <header><span class="g-emoji" aria-hidden="true">💡</span><div><h3>Setting up utilities</h3><p class="sum">Companies, plans, rules, opening it up</p></div></header>
+  <ol class="steps"><li><span class="st">Open <strong>💡・utilities-admin</strong> and press <strong>🌱 Starter pack</strong> — 7 companies with plans are created.</span></li>
+<li><span class="st">Press <strong>🏢 Company</strong> for each one and set the <strong>business/department that gets paid</strong>.</span></li>
+<li><span class="st">Adjust <strong>📦 Plans</strong> (price, cycle, usage swing, setup fee) and <strong>⚙️ Billing rules</strong> (late fee, days to pay, shut-off, reconnect fee, autopay discount).</span></li>
+<li><span class="st">Test it yourself in <strong>💡・utilities</strong> (staff can use it while locked).</span></li>
+<li><span class="st">When ready press <strong>🔓 Open to players</strong>.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">📊 Overview shows customers, revenue and who owes.</span></p>
+</article>
+<article class="guide" id="staff-schedule" data-aud="staff" data-words="scheduling things buttons add event announcement payment payroll manage timezone open 🗓️・schedule. staff see buttons: 📅 add event, 📣 announcement, 💸 payment, 💼 payroll, 🗂️ manage and 🌍 timezone. press 🌍 timezone once and type yours, e.g. america/new_york. press a button, fill in the form and choose how often it repeats. when can be in 2h, 20:00, tomorrow 8pm or fri 19:30. events show on the schedule card with a countdown, a reminder before they start and a starting now post. 🗂️ manage lets you pause, resume, run now or delete anything that&#x27;s scheduled. prefer commands? /schedule announce, /schedule money, /schedule event, /schedule payroll and /schedule list do the same.">
+  <header><span class="g-emoji" aria-hidden="true">🗓️</span><div><h3>Scheduling things</h3><p class="sum">Buttons in #🗓️・schedule, or slash commands</p></div></header>
+  <ol class="steps"><li><span class="st">Open <strong>🗓️・schedule</strong>. Staff see buttons: <strong>📅 Add event</strong>, <strong>📣 Announcement</strong>, <strong>💸 Payment</strong>, <strong>💼 Payroll</strong>, <strong>🗂️ Manage</strong> and <strong>🌍 Timezone</strong>.</span></li>
+<li><span class="st">Press <strong>🌍 Timezone</strong> once and type yours, e.g. <code>America/New_York</code>.</span></li>
+<li><span class="st">Press a button, fill in the form and choose how often it repeats. <strong>When</strong> can be <code>in 2h</code>, <code>20:00</code>, <code>tomorrow 8pm</code> or <code>fri 19:30</code>.</span></li>
+<li><span class="st">Events show on the schedule card with a countdown, a reminder before they start and a <em>starting now</em> post.</span></li>
+<li><span class="st"><strong>🗂️ Manage</strong> lets you pause, resume, run now or delete anything that's scheduled.</span></li>
+<li><span class="st">Prefer commands? <code>/schedule announce</code>, <code>/schedule money</code>, <code>/schedule event</code>, <code>/schedule payroll</code> and <code>/schedule list</code> do the same.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Times: <code>in 2h</code>, <code>20:00</code>, <code>tomorrow 8pm</code>, <code>fri 19:30</code>, <code>2026-11-20 18:00</code>.</span></p>
+</article>
+<article class="guide" id="staff-requests" data-aud="staff" data-words="business &amp; property requests approve, deny and open the channels requests appear in **🏢・business-requests-admin** / **🏠・property-requests-admin** with ✅ approve / ❌ deny. when approving you can set a **price** (taken from the player&#x27;s bank) and a **note**. approved business → created and owned by the player. approved property → added to their inventory. the player channels start private — open them from the admin card when you&#x27;re ready.">
+  <header><span class="g-emoji" aria-hidden="true">📝</span><div><h3>Business &amp; property requests</h3><p class="sum">Approve, deny and open the channels</p></div></header>
+  <ol class="steps"><li><span class="st">Requests appear in <strong>🏢・business-requests-admin</strong> / <strong>🏠・property-requests-admin</strong> with ✅ Approve / ❌ Deny.</span></li>
+<li><span class="st">When approving you can set a <strong>price</strong> (taken from the player's bank) and a <strong>note</strong>.</span></li>
+<li><span class="st">Approved business → created and owned by the player. Approved property → added to their inventory.</span></li>
+<li><span class="st">The player channels start private — open them from the admin card when you're ready.</span></li></ol>
+</article>
+<article class="guide" id="staff-import" data-aud="staff" data-words="importing from the old bot bring balances, items and shops across in **#banks-inventory** run the old bot&#x27;s **`/balance user:@player`** — it&#x27;s imported within seconds. inventories: run its inventory command there and **click through every page** (next, next…). shops: run **`business_inventory`** for each business. **nothing doubles** — the first card *sets* the value, later cards only apply changes. images posted there are saved; ask claude to *read new data* and they&#x27;re imported the same safe way.">
+  <header><span class="g-emoji" aria-hidden="true">📥</span><div><h3>Importing from the old bot</h3><p class="sum">Bring balances, items and shops across</p></div></header>
+  <ol class="steps"><li><span class="st">In <strong>#banks-inventory</strong> run the old bot's <strong><code>/balance user:@player</code></strong> — it's imported within seconds.</span></li>
+<li><span class="st">Inventories: run its inventory command there and <strong>click through every page</strong> (Next, Next…).</span></li>
+<li><span class="st">Shops: run <strong><code>business_inventory</code></strong> for each business.</span></li>
+<li><span class="st"><strong>Nothing doubles</strong> — the first card <em>sets</em> the value, later cards only apply changes.</span></li>
+<li><span class="st">Images posted there are saved; ask Claude to <em>read new data</em> and they're imported the same safe way.</span></li></ol><p class="tip"><span class="tip-k">Tip</span><span class="tt">Every import is posted in 📒・bot-logs.</span></p>
+</article>
+<article class="guide" id="staff-accounts" data-aud="staff" data-words="player accounts directory everyone&#x27;s money &amp; items in one place open **📊・player-accounts** — one card, richest first, 20 per page. use **◀ prev / next ▶** to page through. type a name in **🔎** to see that player&#x27;s full account (all items, businesses) — only you see it. updates every minute. `/player_accounts` refreshes it now.">
+  <header><span class="g-emoji" aria-hidden="true">📊</span><div><h3>Player accounts directory</h3><p class="sum">Everyone's money &amp; items in one place</p></div></header>
+  <ol class="steps"><li><span class="st">Open <strong>📊・player-accounts</strong> — one card, richest first, 20 per page.</span></li>
+<li><span class="st">Use <strong>◀ Prev / Next ▶</strong> to page through.</span></li>
+<li><span class="st">Type a name in <strong>🔎</strong> to see that player's full account (all items, businesses) — only you see it.</span></li>
+<li><span class="st">Updates every minute. <code>/player_accounts</code> refreshes it now.</span></li></ol>
+</article>
+<article class="guide" id="staff-chars" data-aud="staff" data-words="characters (staff) limits and viewing players&#x27; characters change the limit: `/admin config key:max_characters value:3`. see anyone&#x27;s characters: `/character list user:@name`. each character has its own wallet, bank and inventory; businesses, payroll and citations stay with the discord user.">
+  <header><span class="g-emoji" aria-hidden="true">🎭</span><div><h3>Characters (staff)</h3><p class="sum">Limits and viewing players' characters</p></div></header>
+  <ol class="steps"><li><span class="st">Change the limit: <code>/admin config key:max_characters value:3</code>.</span></li>
+<li><span class="st">See anyone's characters: <code>/character list user:@name</code>.</span></li>
+<li><span class="st">Each character has its own wallet, bank and inventory; businesses, payroll and citations stay with the Discord user.</span></li></ol>
+</article>
+<article class="guide" id="staff-fines" data-aud="staff" data-words="issuing citations fines for department members department members: `/citation issue org:lspd user:@name amount:500 reason:…`. department heads can `/citation edit` and `/citation void`. players pay with `/citation pay`; overdue ones get the late fee (`/admin config key:late_fee`).">
+  <header><span class="g-emoji" aria-hidden="true">🚔</span><div><h3>Issuing citations</h3><p class="sum">Fines for department members</p></div></header>
+  <ol class="steps"><li><span class="st">Department members: <code>/citation issue org:LSPD user:@name amount:500 reason:…</code>.</span></li>
+<li><span class="st">Department heads can <code>/citation edit</code> and <code>/citation void</code>.</span></li>
+<li><span class="st">Players pay with <code>/citation pay</code>; overdue ones get the late fee (<code>/admin config key:late_fee</code>).</span></li></ol>
+</article>
+<article class="guide" id="staff-panels" data-aud="staff" data-words="tickets, applications &amp; documents posting the panels tickets: `/ticket panel` in the channel you want. applications: `/apply_panel` — build the forms on the web panel. documents: `/docs_panel` — add documents on the web panel. settings for all of these: web panel → **settings**.">
+  <header><span class="g-emoji" aria-hidden="true">🧩</span><div><h3>Tickets, applications &amp; documents</h3><p class="sum">Posting the panels</p></div></header>
+  <ol class="steps"><li><span class="st">Tickets: <code>/ticket panel</code> in the channel you want.</span></li>
+<li><span class="st">Applications: <code>/apply_panel</code> — build the forms on the web panel.</span></li>
+<li><span class="st">Documents: <code>/docs_panel</code> — add documents on the web panel.</span></li>
+<li><span class="st">Settings for all of these: web panel → <strong>Settings</strong>.</span></li></ol>
+</article></div>
+    </section>
+
+    <p class="empty" id="none" hidden>No guide matches that search. Try a shorter word, like “bill” or “bank”.</p>
+    <footer>Amounts like <code>5k</code>, <code>2.5m</code> and <code>all</code> work everywhere. The same guides are in Discord in #📖・docs.</footer>
+  </main>
+</div>
+
+<script>
+(function () {
+  var q = document.getElementById('q');
+  var guides = Array.prototype.slice.call(document.querySelectorAll('.guide'));
+  var links = Array.prototype.slice.call(document.querySelectorAll('.nav-i'));
+  var none = document.getElementById('none');
+  q.addEventListener('input', function () {
+    var t = q.value.trim().toLowerCase(), shown = 0;
+    guides.forEach(function (g) {
+      var hit = !t || g.dataset.words.indexOf(t) !== -1;
+      g.hidden = !hit; if (hit) shown++;
+      var l = document.querySelector('.nav-i[data-target="' + g.id + '"]'); if (l) l.hidden = !hit;
+    });
+    document.querySelectorAll('#players, #staff').forEach(function (sec) {
+      sec.hidden = !sec.querySelector('.guide:not([hidden])');
+    });
+    document.getElementById('channels').hidden = !!t;
+    none.hidden = shown !== 0;
+  });
+  function toHash() {
+    var id = decodeURIComponent(location.hash.slice(1)), el = id && document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ block: 'start' });
+    links.forEach(function (l) { l.classList.toggle('on', l.dataset.target === id); });
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(toHash); else window.addEventListener('load', toHash);
+  window.addEventListener('hashchange', toHash);
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (e.isIntersecting) links.forEach(function (l) { l.classList.toggle('on', l.dataset.target === e.target.id); });
+      });
+    }, { rootMargin: '0px 0px -75% 0px' });
+    guides.forEach(function (g) { io.observe(g); });
+  }
+})();
+</script>
+
+</body>
+</html>

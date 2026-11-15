@@ -147,11 +147,236 @@ def describe_target(t):
     return {"role": f"<@&{v}>", "user": f"<@{v}>", "org": f"org #{v}"}.get(kind, t)
 
 
+# ═════════════════════ #schedule card buttons & forms ═════════════════════
+REPEAT_OPTS = [(c.name, c.value) for c in REPEATS]
+
+
+def _t(label, desc=None, ph=None, required=True, long=False, maxlen=200, default=None):
+    return discord.ui.Label(text=label, description=desc, component=discord.ui.TextInput(
+        placeholder=ph, required=required, max_length=maxlen, default=default,
+        style=discord.TextStyle.paragraph if long else discord.TextStyle.short))
+
+
+def _sel(label, opts, desc=None):
+    return discord.ui.Label(text=label, description=desc, component=discord.ui.Select(
+        options=[discord.SelectOption(label=l, value=v, default=(i == 0)) for i, (l, v) in enumerate(opts)]))
+
+
+def _v(label):
+    c = label.component
+    if isinstance(c, discord.ui.TextInput):
+        return (c.value or "").strip()
+    return c.values[0] if c.values else None
+
+
+WHEN_HELP = "in 2h · 20:00 · tomorrow 8pm · fri 19:30 · 2026-11-20 18:00"
+
+
+class SchedModal(discord.ui.Modal):
+    def __init__(self, cog):
+        super().__init__(timeout=600)
+        self.cog = cog
+
+    async def on_submit(self, inter):
+        try:
+            await self.run(inter)
+        except EconError as err:
+            await reply(inter, embed=emb("❌ " + str(err)[:240], None, RED), ephemeral=True)
+
+
+class EventModal(SchedModal, title="📅 Add an event"):
+    name = _t("Event name", ph="e.g. RP Night")
+    when = _t("Starts", WHEN_HELP, "sat 8pm")
+    desc = _t("Description", required=False, long=True, maxlen=1500, ph="optional")
+    remind = _t("Reminder (minutes before, 0 = none)", default="30", maxlen=6)
+    repeat = _sel("Repeats", REPEAT_OPTS)
+
+    async def run(self, inter):
+        r = _v(self.remind) or "0"
+        if not r.isdigit():
+            raise EconError("Reminder must be a number of minutes.")
+        await self.cog.create(inter, "setup", kind="event", title=_v(self.name), body=_v(self.desc) or None,
+                              remind_min=int(r), ping_role_id=None, when=_v(self.when), repeat=_v(self.repeat) or "none")
+
+
+class AnnounceModal(SchedModal, title="📣 Schedule an announcement"):
+    channel = discord.ui.Label(text="Channel", component=discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text, discord.ChannelType.news]))
+    name = _t("Title", ph="e.g. Server restart")
+    msg = _t("Message", long=True, maxlen=3500)
+    when = _t("When", WHEN_HELP, "20:00")
+    repeat = _sel("Repeats", REPEAT_OPTS)
+
+    async def run(self, inter):
+        ch = self.channel.component.values[0] if self.channel.component.values else None
+        if not ch:
+            raise EconError("Pick a channel.")
+        await self.cog.create(inter, "setup", kind="announce", title=_v(self.name), body=_v(self.msg), channel_id=ch.id,
+                              ping_role_id=None, when=_v(self.when), repeat=_v(self.repeat) or "none")
+
+
+class MoneyModal(SchedModal, title="💸 Schedule a payment or charge"):
+    what = _sel("What", [("Give to everyone", "give:everyone"), ("Charge everyone", "charge:everyone"),
+                         ("Give to the role/player below", "give:pick"), ("Charge the role/player below", "charge:pick"),
+                         ("Give to the business below", "give:org"), ("Charge the business below", "charge:org")])
+    target = discord.ui.Label(text="Role or player (if chosen above)", description="Start typing",
+                              component=discord.ui.MentionableSelect(required=False, min_values=0))
+    org = _t("Business / department (if chosen above)", "Part of the name is fine", required=False)
+    amount = _t("Amount (per person)", ph="500, 5k")
+    when = _t("When, repeat", "e.g.  fri 18:00, weekly   ·   in 1h   ·   20:00, daily", "fri 18:00, weekly")
+
+    async def run(self, inter):
+        op, who = (_v(self.what) or "give:everyone").split(":")
+        amt = parse_amount(_v(self.amount))
+        if who == "pick":
+            vals = self.target.component.values
+            if not vals:
+                raise EconError("Pick the role or player.")
+            t = vals[0]
+            target = f"role:{t.id}" if isinstance(t, discord.Role) else f"user:{t.id}"
+        elif who == "org":
+            from cogs.staffpanel import match_org
+            o = await match_org(inter.guild_id, _v(self.org))
+            target = f"org:{o['id']}"
+        else:
+            target = "everyone"
+        when, _, rep_ = _v(self.when).partition(",")
+        await self.cog.create(inter, "economy", kind="money", title=f"{'Give' if op == 'give' else 'Charge'} {amt:,} → {describe_target(target)}",
+                              op=op, amount=amt, target=target, when=when.strip(), repeat=rep_.strip() or "none")
+
+
+class PayrollModal(SchedModal, title="💼 Schedule payroll"):
+    org = _t("Business / department", "Leave empty for ALL of them", required=False)
+    when = _t("When", WHEN_HELP, "fri 18:00")
+    repeat = _sel("Repeats", [o for o in REPEAT_OPTS if o[1] == "weekly"] + [o for o in REPEAT_OPTS if o[1] != "weekly"])
+
+    async def run(self, inter):
+        target, label = "all", "all businesses & departments"
+        if _v(self.org):
+            from cogs.staffpanel import match_org
+            o = await match_org(inter.guild_id, _v(self.org))
+            target, label = f"org:{o['id']}", o["name"]
+        await self.cog.create(inter, "setup", kind="payroll", title=f"Payroll — {label}", target=target,
+                              when=_v(self.when), repeat=_v(self.repeat) or "weekly")
+
+
+class TzModal(SchedModal, title="🌍 Server timezone"):
+    tz = _t("Timezone", "e.g. UTC, Europe/London, America/New_York, America/Los_Angeles", "America/New_York")
+
+    async def run(self, inter):
+        await core.require_admin(inter, "setup")
+        try:
+            ZoneInfo(_v(self.tz))
+        except (ZoneInfoNotFoundError, ValueError):
+            raise EconError("Unknown timezone. Examples: UTC, Europe/London, America/New_York.")
+        await ex("INSERT INTO schedule_config (guild_id,tz) VALUES (%s,%s) ON DUPLICATE KEY UPDATE tz=VALUES(tz)", inter.guild_id, _v(self.tz))
+        await reply(inter, embed=emb("🌍 Timezone set", f"Schedule times are now read as **{_v(self.tz)}**.", GREEN), ephemeral=True)
+        await self.cog.sync_calendar()
+
+
+class ManageView(discord.ui.View):
+    def __init__(self, cog, rows):
+        super().__init__(timeout=300)
+        self.cog, self.sid = cog, None
+        s = discord.ui.Select(placeholder="Pick a schedule…", options=[
+            discord.SelectOption(label=f"#{r['id']} {r['title']}"[:100], value=str(r["id"]), emoji=KIND_ICON.get(r["kind"], "•"),
+                                 description=("⏸️ paused" if not r["enabled"] else f"{repeat_label(r['repeat_min'])} · next {r['next_run']:%a %d %b %H:%M} UTC")[:100])
+            for r in rows[:25]])
+        s.callback = self.pick
+        self.add_item(s)
+
+    async def pick(self, inter):
+        self.sid = int(inter.data["values"][0])
+        await inter.response.defer()
+
+    async def _row(self, inter):
+        if not self.sid:
+            raise EconError("Pick a schedule first.")
+        return await self.cog.get(inter, self.sid)
+
+    @discord.ui.button(label="Pause / resume", emoji="⏯️", row=1)
+    async def pause_(self, inter, _):
+        try:
+            r = await self._row(inter)
+            nxt = r["next_run"]
+            if not r["enabled"] and r["repeat_min"]:
+                while nxt <= utcnow():
+                    nxt += dt.timedelta(minutes=r["repeat_min"])
+            await ex("UPDATE schedules SET enabled=%s, next_run=%s WHERE id=%s", 0 if r["enabled"] else 1, nxt, r["id"])
+            await reply(inter, embed=emb(f"{'⏸️ Paused' if r['enabled'] else '▶️ Resumed'} #{r['id']}", r["title"], GOLD), ephemeral=True)
+            await self.cog.sync_calendar()
+        except EconError as err:
+            await reply(inter, embed=emb("❌ " + str(err)[:240], None, RED), ephemeral=True)
+
+    @discord.ui.button(label="Run now", emoji="▶️", style=discord.ButtonStyle.success, row=1)
+    async def run_(self, inter, _):
+        try:
+            r = await self._row(inter)
+            await inter.response.defer(ephemeral=True)
+            out = await self.cog.execute(r, manual=True)
+            await inter.followup.send(embed=emb(f"▶️ Ran #{r['id']}", out or r["title"], GREEN), ephemeral=True)
+        except EconError as err:
+            await reply(inter, embed=emb("❌ " + str(err)[:240], None, RED), ephemeral=True)
+
+    @discord.ui.button(label="Delete", emoji="🗑️", style=discord.ButtonStyle.danger, row=1)
+    async def del_(self, inter, _):
+        try:
+            r = await self._row(inter)
+            await ex("DELETE FROM schedules WHERE id=%s", r["id"])
+            await reply(inter, embed=emb(f"🗑️ Deleted #{r['id']}", r["title"], GOLD), ephemeral=True)
+            await self.cog.sync_calendar()
+        except EconError as err:
+            await reply(inter, embed=emb("❌ " + str(err)[:240], None, RED), ephemeral=True)
+
+
+class SchedCard(discord.ui.LayoutView):
+    def __init__(self, cog, body=None):
+        super().__init__(timeout=None)
+        self.cog = cog
+        spec = [("event", "Add event", "📅", discord.ButtonStyle.success), ("announce", "Announcement", "📣", discord.ButtonStyle.primary),
+                ("money", "Payment", "💸", discord.ButtonStyle.primary), ("payroll", "Payroll", "💼", discord.ButtonStyle.primary),
+                ("manage", "Manage", "🗂️", discord.ButtonStyle.secondary), ("tz", "Timezone", "🌍", discord.ButtonStyle.secondary)]
+        b = {}
+        for k, l, e, st in spec:
+            b[k] = discord.ui.Button(label=l, emoji=e, style=st, custom_id=f"sched:{k}")
+            b[k].callback = self.on_button
+        S, T = discord.ui.Section, discord.ui.TextDisplay
+        gap = lambda: discord.ui.Separator(visible=False)
+        self.add_item(discord.ui.Container(
+            *(body or [T("## 🗓️ Server schedule")]), discord.ui.Separator(), T("### 🛠️ Staff — schedule something"),
+            S(T("**📅 Add an event**\nShows here with a countdown, posts a reminder before it starts and a *starting now* post."), accessory=b["event"]), gap(),
+            S(T("**📣 Announcement**\nPost a message in any channel at a set time — once or repeating."), accessory=b["announce"]), gap(),
+            S(T("**💸 Payment or charge**\nGive or take money from everyone, a role, a player or a business — once or repeating."), accessory=b["money"]), gap(),
+            S(T("**💼 Payroll**\nPay one business/department (or all) at a fixed day and time."), accessory=b["payroll"]), gap(),
+            S(T("**🗂️ Manage**\nPause, resume, run now or delete anything scheduled."), accessory=b["manage"]), gap(),
+            S(T("**🌍 Timezone**\nThe timezone typed times are read in (everyone *sees* times in their own)."), accessory=b["tz"]),
+            T("-# Staff buttons only work for staff · events & payroll need Server setup, payments need Citizens & money"),
+            accent_colour=discord.Colour.blurple()))
+
+    async def on_button(self, inter):
+        k = inter.data["custom_id"].split(":")[1]
+        try:
+            c = await cfg(inter.guild_id)
+            need = "economy" if k == "money" else "setup"
+            if not is_admin(inter.user, c, need):
+                raise EconError(f"Staff only — you need the {core.STAFF_PERMS[need][0]} permission.")
+            if k == "manage":
+                rows = await q("SELECT * FROM schedules WHERE guild_id=%s ORDER BY enabled DESC, next_run LIMIT 25", inter.guild_id)
+                if not rows:
+                    raise EconError("Nothing is scheduled yet.")
+                return await inter.response.send_message(embed=emb("🗂️ Manage schedules", "Pick one, then choose an action.", BLUE),
+                                                         view=ManageView(self.cog, rows), ephemeral=True)
+            modal = {"event": EventModal, "announce": AnnounceModal, "money": MoneyModal, "payroll": PayrollModal, "tz": TzModal}[k]
+            await inter.response.send_modal(modal(self.cog))
+        except EconError as err:
+            await reply(inter, embed=emb("❌ " + str(err)[:240], None, RED), ephemeral=True)
+
+
 class Scheduler(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.ticker.start()
         self.calendar.start()
+        bot.add_view(SchedCard(self))
 
     async def cog_load(self):
         for s in SCHEMA:
@@ -449,16 +674,13 @@ class Scheduler(commands.Cog):
                        + (f"\n-# {r['body'][:150]}" if r["body"] else "") for r in events) or "*No events scheduled.*"
         ot = "\n".join(f"{KIND_ICON[r['kind']]} **{r['title'][:80]}** — <t:{unix(r['next_run'])}:R>"
                        + (f" · 🔁 {repeat_label(r['repeat_min'])}" if r["repeat_min"] else "") for r in other) or "*Nothing else scheduled.*"
-        v = discord.ui.LayoutView(timeout=None)
-        v.add_item(discord.ui.Container(
+        return SchedCard(self, [
             discord.ui.TextDisplay(f"## 🗓️ Server schedule\n-# Times show in your own timezone · server timezone {tz.key} · "
                                    f"updated <t:{int(discord.utils.utcnow().timestamp())}:R>"),
             discord.ui.Separator(),
             discord.ui.TextDisplay(f"### 📅 Upcoming events\n{ev}"),
             discord.ui.Separator(),
-            discord.ui.TextDisplay(f"### ⏱️ Also scheduled\n{ot}"),
-            accent_colour=discord.Colour.blurple()))
-        return v
+            discord.ui.TextDisplay(f"### ⏱️ Also scheduled\n{ot}")])
 
     async def sync_calendar(self):
         for gid in self.bot.guild_ids:

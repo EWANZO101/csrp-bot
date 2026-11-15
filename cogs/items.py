@@ -3,7 +3,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import (EconError, q, q1, cfg, money, emb, ts, transfer, ensure_user, find_org, log, dm, reply,
+from core import (EconError, q, q1, cfg, active_character_name, money, emb, ts, transfer, ensure_user, find_org, log, dm, reply,
                   BURN, GREEN, BLUE, GOLD)
 from cogs.orgs import org_autocomplete, item_autocomplete, get_item, take_stock, give_user_item, item_line
 
@@ -125,7 +125,8 @@ class Items(commands.Cog):
                          inter.guild_id, user.id)
         lines = [f"**{r['name']}** ×{r['qty']}" + (f" · from {r['source']}" if r["source"] else "")
                  + (f"\n  ↳ {r['description'][:80]}" if r["description"] else "") for r in rows]
-        e = emb(f"🎒 {user.display_name}'s inventory", "\n".join(lines)[:3500] or "Empty.", BLUE)
+        char = await active_character_name(inter.guild_id, user.id)
+        e = emb(f"🎒 {user.display_name}'s inventory" + (f" · 🎭 {char}" if char else ""), "\n".join(lines)[:3500] or "Empty.", BLUE)
         if grants:
             e.add_field(name="⏳ Active timed items", value="\n".join(
                 f"<@&{g['role_id']}> ({g['item'] or 'item'}) expires {ts(g['expires_at'])}" for g in grants)[:1024], inline=False)

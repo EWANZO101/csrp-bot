@@ -83,17 +83,21 @@ class AppState:
         from bot import EconomyBot
         self.status = "starting"
 
-        async def run(members: bool):
-            bot = EconomyBot(self, members=members)
+        async def run(members: bool, presences: bool = True):
+            bot = EconomyBot(self, members=members, presences=presences)
             self.bot = bot
             try:
                 await bot.start(self.settings["token"])
             except discord.PrivilegedIntentsRequired:
                 await bot.close()
+                if presences:   # drop only presence tracking first, so members/message content (importer) keep working
+                    self.warning = ("Presence Intent is off — GTA activity tracking is disabled. Turn it on in Discord "
+                                    "Developer Portal → Bot → Privileged Gateway Intents, then restart the bot.")
+                    return await run(members, False)
                 if members:
                     self.warning = ("Server Members Intent is off — names in the panel may show as IDs. Turn it on in "
                                     "Discord Developer Portal → Bot → Privileged Gateway Intents, then restart the bot.")
-                    return await run(False)
+                    return await run(False, presences)
                 self.status, self.error = "error", "Discord refused the gateway intents."
             except discord.LoginFailure:
                 self.status, self.error = "error", "Discord rejected the bot token."

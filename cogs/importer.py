@@ -9,13 +9,16 @@ Values are snapshots: the first one sets the account to exactly that value; late
 since the previous snapshot, so money earned/spent in this bot meanwhile is kept. Every change is a ledger entry
 (kind "import"), so it shows in history and can be undone. History is back-filled on startup.
 """
-import asyncio, hashlib, json, logging, re
+import asyncio, hashlib, json, logging, os, re
+from datetime import datetime, timedelta, timezone
+
+import aiohttp
 
 import discord
 from discord.ext import commands, tasks
 
 import core
-from core import q, q1, ex, transfer, ensure_user, emb, MINT, BURN, GOLD
+from core import q, q1, ex, transfer, ensure_user, emb, MINT, BURN, GOLD, GREEN, RED
 
 logger = logging.getLogger("economy.import")
 
@@ -56,35 +59,290 @@ def parse_item_line(line: str):
     return line[:64], 1   # plain bullet = one of that item
 
 
+# The 3 s whole-channel sweep is temporary: it switches itself off at the end of 22 Nov 2026 (UTC).
+POLL_UNTIL = datetime(2026, 11, 23, tzinfo=timezone.utc)
+
+# Self-cleanup: once a message's data is fully imported, delete it from the channel.
+# Wait this long after the last post/edit (the old bot edits cards, e.g. inventory pages) before deleting.
+CLEANUP_GRACE = timedelta(minutes=10)
+GOOD_KINDS = {"balance", "inventory", "org_inventory", "org_list"}   # anything else (unknown, inventory?, error) is kept
+
+
 class Importer(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.lock = asyncio.Lock()
+        self.lock = core.IMPORT_LOCK   # shared with character switching
         self.backfilled = False
+        self.img_busy = set()          # (msg_id, idx) currently being downloaded / OCR'd
+        self.warned_perm = False
         self.poll.start()
+        self.cleanup.start()
 
     def cog_unload(self):
         self.poll.cancel()
+        self.cleanup.cancel()
+
+    # ───────── images (saved for review; data is read off them by staff/Claude and imported via tools/import_manual.py) ─────────
+    async def cog_load(self):
+        await ex("""CREATE TABLE IF NOT EXISTS import_images (
+          msg_id BIGINT UNSIGNED NOT NULL, idx INT NOT NULL, guild_id BIGINT UNSIGNED NOT NULL,
+          author_id BIGINT UNSIGNED NULL, filename VARCHAR(200) NOT NULL, path VARCHAR(300) NOT NULL, url VARCHAR(600) NULL,
+          status VARCHAR(12) NOT NULL DEFAULT 'pending', note VARCHAR(500) NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (msg_id, idx)) ENGINE=InnoDB""")
+
+    @staticmethod
+    def image_list(msg):
+        found = [(a.filename, a.url) for a in msg.attachments
+                 if (a.content_type or "").startswith("image/") or a.filename.lower().rsplit(".", 1)[-1] in ("png", "jpg", "jpeg", "webp", "gif")]
+        for e in msg.embeds:
+            for media in (e.image, e.thumbnail):
+                url = getattr(media, "url", None)
+                if url and "/avatars/" not in url and "/icons/" not in url:
+                    found.append((url.split("?")[0].rsplit("/", 1)[-1] or "embed.png", url))
+        return found
+
+    async def capture_images(self, msg) -> int:
+        ch_id, _ = self.conf
+        if not (ch_id and msg.channel.id == ch_id and msg.guild):
+            return 0
+        found = self.image_list(msg)
+        saved = 0
+        folder = os.path.join(os.getenv("DATA_DIR", "/app/data"), "import-images")
+        for idx, (fname, url) in enumerate(found):
+            key = (msg.id, idx)
+            if key in self.img_busy:      # live event and 3 s sweep can see the same image at once
+                continue
+            if await q1("SELECT 1 FROM import_images WHERE msg_id=%s AND idx=%s", msg.id, idx):
+                continue
+            self.img_busy.add(key)
+            try:
+                saved += await self._save_and_read(msg, idx, fname, url, folder)
+            finally:
+                self.img_busy.discard(key)
+        return saved
+
+    async def _save_and_read(self, msg, idx, fname, url, folder) -> int:
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", fname)[-80:] or "image.png"
+        path = os.path.join(folder, f"{msg.id}_{idx}_{safe}")
+        try:
+            os.makedirs(folder, exist_ok=True)
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url) as r:
+                    if r.status != 200:
+                        return 0
+                    data = await r.read()
+            with open(path, "wb") as f:
+                f.write(data)
+        except Exception:
+            logger.exception("couldn't save image from message %s", msg.id)
+            return 0
+        await ex("INSERT IGNORE INTO import_images (msg_id,idx,guild_id,author_id,filename,path,url) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                 msg.id, idx, msg.guild.id, msg.author.id, fname[:200], path, url[:600])
+        logger.info("saved image: %s (message %s by %s)", path, msg.id, msg.author)
+        await self.auto_import(msg, idx, path)
+        return 1
+
+    # ───────── screenshots → OCR → importer (same snapshot logic, so nothing doubles) ─────────
+    @staticmethod
+    def _ocr(path):
+        import pytesseract
+        from PIL import Image, ImageOps, ImageStat
+        im = Image.open(path).convert("L")
+        if ImageStat.Stat(im).mean[0] < 128:          # Discord dark theme → invert to dark-on-light
+            im = ImageOps.invert(im)
+        im = im.resize((im.width * 2, im.height * 2))
+        return pytesseract.image_to_string(im)
+
+    def _resolve(self, guild, name, poster):
+        n = (name or "").strip().lstrip("@").lower()
+        if not n:
+            return None
+        def names(m):
+            return {x.lower() for x in (m.name, m.display_name, getattr(m, "global_name", None) or "", getattr(m, "nick", None) or "") if x}
+        if poster is not None and n in names(poster):
+            return poster.id
+        hits = [m for m in guild.members if n in names(m)]
+        return hits[0].id if len(hits) == 1 else None
+
+    def _card(self, guild, data, uid, poster):
+        k = data["kind"]
+        if k == "balance":
+            e = discord.Embed(title="💰 Account Balance", description=f"Showing balances for <@{uid}>")
+            e.add_field(name="💵 Wallet", value=f"${data['wallet']:,}.00")
+            e.add_field(name="🏦 Bank", value=f"${data['bank']:,}.00")
+            if data["businesses"]:
+                e.add_field(name="🏢 Businesses", value="\n".join(f"**{n}** - ${v:,}.00" for n, v in data["businesses"])[:1024], inline=False)
+            if data["departments"]:
+                e.add_field(name="🏛️ Departments", value="\n".join(f"**{n}** - ${v:,}.00" for n, v in data["departments"])[:1024], inline=False)
+            return e
+        if k == "inventory":
+            e = discord.Embed(title=f"🎒 Inventory for {data['name']}",
+                              description=f"<@{uid}>\n" + "\n".join(f"• {i}" for i in data["items"]))
+            e.set_footer(text=f"Page {data['page']} / ?")
+            return e
+        if k == "org_inventory":
+            return discord.Embed(title=f"📦 Inventory — {data['org']}", description="\n".join(
+                f"**{n}** — Price: `${p}.0` | Stock: `{'∞' if s is None else s}`" for n, p, s in data["items"]))
+        if k == "org_list":
+            rows = []
+            for n, owner, bal in data["rows"]:
+                oid = self._resolve(guild, owner, poster)
+                rows.append(f"**{n}** — " + (f"Owned by <@{oid}> | " if oid else "") + f"Balance: `${bal}.0`")
+            return discord.Embed(title="📋 Business List", description="\n".join(rows))
+        return None
+
+    async def auto_import(self, msg, idx, path):
+        from cogs.ocr_parse import parse
+        gid, ch_id = msg.guild.id, self.conf[0]
+        async def done(status, note, title, color, body=""):
+            await ex("UPDATE import_images SET status=%s, note=%s WHERE msg_id=%s AND idx=%s", status, note[:500], msg.id, idx)
+            await core.log(self.bot, gid, emb(title, (body + f"\n[screenshot]({msg.jump_url}) from {msg.author.mention}")[:4000], color))
+        try:
+            text = await asyncio.get_running_loop().run_in_executor(None, self._ocr, path)
+        except Exception as err:
+            logger.exception("OCR failed for %s", path)
+            return await done("review", f"OCR failed: {err}", "📷 Screenshot needs review", GOLD, "Couldn't read the image.")
+        data = parse(text)
+        if not data:
+            return await done("review", "not a recognised old-bot card", "📷 Screenshot needs review", GOLD,
+                              "Saved, but it doesn't look like an old-bot balance / inventory / stock card.")
+        uid = None
+        if data["kind"] in ("balance", "inventory"):
+            uid = self._resolve(msg.guild, data["name"], msg.author)
+            if not uid:
+                return await done("review", f"couldn't match player '{data['name']}'", "📷 Screenshot needs review", GOLD,
+                                  f"Read a **{data['kind']}** card for **{data['name']}**, but couldn't tell which member that is.")
+        card = self._card(msg.guild, data, uid, msg.author)
+        async with self.lock:
+            try:
+                kind, changes = await self.apply_embed(gid, msg, card)
+            except Exception as err:
+                logger.exception("screenshot import failed for %s", path)
+                return await done("review", f"import error: {err}", "📷 Screenshot needs review", RED, "Import failed — see logs.")
+        logger.info("screenshot %s imported (%s): %s", path, kind, "; ".join(changes) or "no changes")
+        await done("imported", "; ".join(changes) or "no changes (already up to date)",
+                   "📷 Screenshot imported automatically", GREEN,
+                   "\n".join(f"• {c}" for c in changes)[:3500] or "Already up to date — nothing changed.")
+
+    async def retry_pending_images(self):
+        ch = self.bot.get_channel(self.conf[0])
+        if not ch:
+            return
+        for r in await q("SELECT * FROM import_images WHERE status='pending' AND created_at < NOW() - INTERVAL 1 MINUTE ORDER BY msg_id"):
+            key = (r["msg_id"], r["idx"])
+            if key in self.img_busy:
+                continue
+            try:
+                m = await ch.fetch_message(r["msg_id"])
+            except discord.HTTPException:
+                continue
+            self.img_busy.add(key)
+            try:
+                await self.auto_import(m, r["idx"], r["path"])
+            finally:
+                self.img_busy.discard(key)
 
     @tasks.loop(seconds=3)
     async def poll(self):
-        """Safety net: re-check the newest messages every 3 s in case a gateway event was missed."""
+        """Every 3 s: snapshot the WHOLE import channel and import anything new or edited.
+        process()/capture_images() are idempotent (hash + DB checks), so already-imported messages are skipped.
+        Runs only until POLL_UNTIL; after that the loop stops itself (live message/edit events keep importing)."""
+        if datetime.now(timezone.utc) >= POLL_UNTIL:
+            logger.info("poll: 3 s channel sweep expired (%s) — disabled", POLL_UNTIL.isoformat())
+            self.poll.cancel()
+            return
         if not self.backfilled:
             return
         ch_id, _ = self.conf
         ch = self.bot.get_channel(ch_id) if ch_id else None
         if not ch:
             return
+        n = 0
         try:
-            msgs = [m async for m in ch.history(limit=50)]
-        except discord.HTTPException:
-            return
-        for msg in reversed(msgs):
-            await self.process(msg)
+            async for msg in ch.history(limit=None, oldest_first=True):
+                try:
+                    await self.capture_images(msg)
+                    if await self.process(msg):
+                        n += 1
+                except Exception:
+                    logger.exception("poll: failed on message %s", msg.id)
+        except discord.HTTPException as e:
+            logger.warning("poll: couldn't read import channel %s: %s", ch_id, e)
+        except Exception:
+            logger.exception("poll: channel sweep failed")   # never let the loop die
+        try:
+            await self.retry_pending_images()     # screenshots saved but never read (e.g. bot restarted mid-OCR)
+        except Exception:
+            logger.exception("poll: retrying pending screenshots failed")
+        if n:
+            logger.info("poll: %d new/changed message(s) imported from #%s", n, ch)
 
     @poll.before_loop
     async def _wait(self):
         await self.bot.wait_until_ready()
+
+    # ───────── self-cleanup: delete messages whose data is safely in the DB ─────────
+    @tasks.loop(seconds=60)
+    async def cleanup(self):
+        if not self.backfilled:
+            return
+        try:
+            await self._cleanup()
+        except Exception:
+            logger.exception("cleanup: sweep failed")
+
+    @cleanup.before_loop
+    async def _wait_cleanup(self):
+        await self.bot.wait_until_ready()
+
+    async def _cleanup(self):
+        ch_id, _ = self.conf
+        ch = self.bot.get_channel(ch_id) if ch_id else None
+        if not ch or not ch.guild:
+            return
+        if not ch.permissions_for(ch.guild.me).manage_messages:
+            if not self.warned_perm:
+                logger.warning("cleanup: bot lacks Manage Messages in #%s — imported messages are NOT being deleted", ch)
+                self.warned_perm = True
+            return
+        self.warned_perm = False
+        cutoff = datetime.now(timezone.utc) - CLEANUP_GRACE
+        deleted = 0
+        async for msg in ch.history(limit=None, before=cutoff, oldest_first=True):
+            if msg.pinned or (msg.edited_at and msg.edited_at > cutoff):
+                continue
+            if not await self.fully_imported(msg):
+                continue
+            try:
+                await msg.delete()
+                deleted += 1
+            except discord.NotFound:
+                pass
+            except discord.HTTPException as e:
+                logger.warning("cleanup: couldn't delete message %s: %s", msg.id, e)
+                break
+        if deleted:
+            logger.info("cleanup: deleted %d fully-imported message(s) from #%s", deleted, ch)
+
+    async def fully_imported(self, msg) -> bool:
+        """True only if everything in the message was imported successfully (data kept in import_log / import_images)."""
+        has_data = False
+        if self.wanted(msg):
+            row = await q1("SELECT kind, hash FROM import_log WHERE msg_id=%s", msg.id)
+            digest = hashlib.sha1(json.dumps([e.to_dict() for e in msg.embeds], sort_keys=True).encode()).hexdigest()
+            if not row or row["hash"] not in (digest, None):
+                return False                      # not imported yet, or changed since
+            kinds = set(filter(None, (row["kind"] or "").split(",")))
+            if not kinds or not kinds <= GOOD_KINDS:
+                return False                      # unreadable card → keep for staff
+            has_data = True
+        imgs = self.image_list(msg)
+        if imgs:
+            rows = await q("SELECT status FROM import_images WHERE msg_id=%s", msg.id)
+            if len(rows) < len(imgs) or any(r["status"] != "imported" for r in rows):
+                return False                      # screenshot pending / needs review → keep
+            has_data = True
+        return has_data                           # plain chat / unrelated messages are never deleted
 
     # ───────── config ─────────
     @property
@@ -117,11 +375,16 @@ class Importer(commands.Cog):
         n = 0
         try:
             async for msg in ch.history(limit=None, oldest_first=True):
+                await self.capture_images(msg)
                 if await self.process(msg):
                     n += 1
         except discord.Forbidden:
             logger.warning("no permission to read history of import channel %s", ch_id)
         logger.info("import back-fill done: %d new message(s) applied from #%s", n, ch)
+        try:
+            await self.retry_pending_images()
+        except Exception:
+            logger.exception("retrying pending screenshots failed")
 
     async def sync_members(self):
         """Give every (human) server member an economy account."""
@@ -149,6 +412,7 @@ class Importer(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, msg):
+        await self.capture_images(msg)
         await self.process(msg)
 
     @commands.Cog.listener()
@@ -353,10 +617,18 @@ class Importer(commands.Cog):
         return delta
 
     async def move(self, gid, ref, delta, memo):
+        if ref[0] in ("wallet", "bank"):
+            cid = await core.import_character(gid, ref[1])   # imports belong to the main character, even when parked
+            if cid:
+                ref = ("c" + ref[0], cid)
         legs = [(MINT, ref, delta)] if delta > 0 else [(ref, BURN, -delta)]
         await transfer(gid, legs, self.bot.user.id, "import", memo, allow_negative=True)
 
     async def cur_user(self, gid, uid, where):
+        cid = await core.import_character(gid, uid)
+        if cid:
+            r = await q1("SELECT wallet, bank FROM characters WHERE id=%s", cid)
+            return r[where] if r else 0
         r = await q1("SELECT wallet, bank FROM users WHERE guild_id=%s AND user_id=%s", gid, uid)
         return r[where] if r else 0
 
@@ -376,11 +648,20 @@ class Importer(commands.Cog):
         return 0
 
     async def cur_item(self, gid, uid, name):
-        r = await q1("SELECT qty FROM user_items WHERE guild_id=%s AND user_id=%s AND name=%s", gid, uid, name)
+        cid = await core.import_character(gid, uid)
+        if cid:
+            r = await q1("SELECT qty FROM character_items WHERE char_id=%s AND name=%s", cid, name)
+        else:
+            r = await q1("SELECT qty FROM user_items WHERE guild_id=%s AND user_id=%s AND name=%s", gid, uid, name)
         return r["qty"] if r else 0
 
     async def add_item(self, gid, uid, name, delta):
         await ensure_user(gid, uid)
+        cid = await core.import_character(gid, uid)   # imports belong to the main character, even when parked
+        if cid:
+            await ex("INSERT INTO character_items (char_id,name,source,qty) VALUES (%s,%s,'old bot',GREATEST(%s,0)) "
+                     "ON DUPLICATE KEY UPDATE qty=GREATEST(qty+%s,0)", cid, name, delta, delta)
+            return
         await ex("INSERT INTO user_items (guild_id,user_id,name,source,qty) VALUES (%s,%s,%s,'old bot',GREATEST(%s,0)) "
                  "ON DUPLICATE KEY UPDATE qty=GREATEST(qty+%s,0)", gid, uid, name, delta, delta)
 

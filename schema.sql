@@ -209,3 +209,29 @@ CREATE TABLE IF NOT EXISTS import_snapshots (
 ;
 ALTER TABLE import_log ADD COLUMN IF NOT EXISTS hash CHAR(40) NULL;
 ALTER TABLE import_log MODIFY summary TEXT NULL
+;
+CREATE TABLE IF NOT EXISTS characters (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guild_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  is_main TINYINT NOT NULL DEFAULT 0,
+  active TINYINT NOT NULL DEFAULT 0,
+  wallet BIGINT NOT NULL DEFAULT 0,
+  bank BIGINT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_char (guild_id, user_id, name),
+  INDEX ix_char_user (guild_id, user_id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS character_items (
+  char_id INT NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  description VARCHAR(300) NULL,
+  consumable TINYINT NOT NULL DEFAULT 1,
+  use_message VARCHAR(300) NULL,
+  role_id BIGINT UNSIGNED NULL,
+  role_days INT NULL,
+  source VARCHAR(64) NULL,
+  qty INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (char_id, name)
+) ENGINE=InnoDB
