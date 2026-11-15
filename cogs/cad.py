@@ -234,9 +234,9 @@ class CAD(commands.Cog):
             dept = s.get("dept_id") or None
             if dept and not await q1("SELECT 1 FROM orgs WHERE id=%s AND guild_id=%s AND kind='dept'", int(dept), gid):
                 dept = None
-            n, cid = await ex("INSERT IGNORE INTO citations (guild_id,dept_id,user_id,issuer_id,amount,reason,issued_at,due_at,cad_record_id) "
-                              "VALUES (%s,%s,%s,%s,%s,%s,%s,%s + INTERVAL %s DAY,%s)",
-                              gid, dept, uid, issuer, total, reason[:500], r["createdAt"], r["createdAt"],
+            n, cid = await ex("INSERT IGNORE INTO citations (guild_id,dept_id,user_id,character_name,issuer_id,amount,reason,issued_at,due_at,cad_record_id) "
+                              "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s + INTERVAL %s DAY,%s)",
+                              gid, dept, uid, f"{r['name']} {r['surname']}".strip()[:100] or None, issuer, total, reason[:500], r["createdAt"], r["createdAt"],
                               int(c["citation_days"]), r["id"])
             if not n:
                 continue
@@ -275,9 +275,9 @@ class CAD(commands.Cog):
         dept = s.get("dept_id") or None
         if dept and not await q1("SELECT 1 FROM orgs WHERE id=%s AND guild_id=%s AND kind='dept'", int(dept), gid):
             dept = None
-        n, cid = await ex("INSERT IGNORE INTO citations (guild_id,dept_id,user_id,issuer_id,amount,reason,issued_at,due_at,cad_record_id) "
-                          "VALUES (%s,%s,%s,%s,%s,%s,%s,%s + INTERVAL %s DAY,%s)",
-                          gid, dept, uid, issuer, total, reason[:500], created, created, int(c["citation_days"]), rec_id)
+        n, cid = await ex("INSERT IGNORE INTO citations (guild_id,dept_id,user_id,character_name,issuer_id,amount,reason,issued_at,due_at,cad_record_id) "
+                          "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s + INTERVAL %s DAY,%s)",
+                          gid, dept, uid, (str(who or "").strip()[:100] or None), issuer, total, reason[:500], created, created, int(c["citation_days"]), rec_id)
         if not n:
             return False
         e = emb(f"🚨 New citation from SnailyCAD — #{cid}", reason, RED)

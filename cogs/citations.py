@@ -12,11 +12,11 @@ SRC = [app_commands.Choice(name="Bank", value="bank"), app_commands.Choice(name=
 
 
 async def cit_ac(inter: discord.Interaction, current: str):
-    rows = await q("SELECT c.id, c.amount, c.late_fee, c.reason, c.user_id FROM citations c WHERE c.guild_id=%s "
+    rows = await q("SELECT c.id, c.amount, c.late_fee, c.reason, c.character_name, c.user_id FROM citations c WHERE c.guild_id=%s "
                    "AND c.status='unpaid' AND (c.user_id=%s OR CAST(c.id AS CHAR) LIKE %s) ORDER BY c.id DESC LIMIT 25",
                    inter.guild_id, inter.user.id, f"{current}%")
     cf = await cfg(inter.guild_id)
-    return [app_commands.Choice(name=f"#{r['id']} · {money(cf, r['amount'] + r['late_fee'])} · {r['reason']}"[:100],
+    return [app_commands.Choice(name=f"#{r['id']} · {money(cf, r['amount'] + r['late_fee'])} · {r['character_name'] or '?'} · {r['reason']}"[:100],
                                 value=r["id"]) for r in rows]
 
 
@@ -31,7 +31,8 @@ async def get_cit(gid, cid):
 def cit_embed(c, r):
     color = {"unpaid": RED, "paid": GREEN, "void": 0x95A5A6}[r["status"]]
     overdue = r["status"] == "unpaid" and r["due_at"] and r["due_at"] < dt.datetime.utcnow()
-    e = emb(f"🚨 Citation #{r['id']}" + (" — OVERDUE" if overdue else ""), r["reason"], color)
+    e = emb(f"🚨 Citation #{r['id']}" + (" — OVERDUE" if overdue else ""), f"**Reason:** {r['reason']}", color)
+    e.add_field(name="Character", value=f"**{r['character_name']}**" if r.get("character_name") else "⚠️ *not recorded*")
     e.add_field(name="Citizen", value=f"<@{r['user_id']}>")
     e.add_field(name="Issued by", value=f"<@{r['issuer_id']}>" + (f"\n{r['dept']}" if r.get("dept") else ""))
     e.add_field(name="Status", value=r["status"].upper())
@@ -92,10 +93,18 @@ class Citations(commands.Cog):
     @citation.command(name="issue", description="Issue a citation/fine (department members)")
     @app_commands.rename(org="department")
     @app_commands.autocomplete(org=org_autocomplete("dept"))
-    @app_commands.describe(due_days="Days to pay before a late fee (default from settings)")
-    async def issue(self, inter: discord.Interaction, org: str, user: discord.Member, amount: str,
-                    reason: app_commands.Range[str, 3, 500], due_days: app_commands.Range[int, 1, 365] | None = None):
+    @app_commands.describe(user="Discord member who plays the character",
+                           character="REQUIRED: the character's full name (first + last), e.g. John Smith",
+                           amount="Fine amount", reason="REQUIRED: why the citation is issued (charge / violation)",
+                           due_days="Days to pay before a late fee (default from settings)")
+    async def issue(self, inter: discord.Interaction, org: str, user: discord.Member, character: app_commands.Range[str, 3, 100],
+                    amount: str, reason: app_commands.Range[str, 5, 500], due_days: app_commands.Range[int, 1, 365] | None = None):
         gid = inter.guild_id
+        character, reason = " ".join(character.split()), " ".join(reason.split())
+        if len(character.split()) < 2:
+            raise EconError("Enter the character's **full name** (first and last), e.g. `John Smith`.")
+        if len(reason) < 5:
+            raise EconError("Enter the **reason** for the citation (the charge or violation).")
         o = await find_org(gid, org, "dept")
         await require_level(inter.user, o, MEMBER, "issue citations")
         if user.bot:
@@ -104,15 +113,15 @@ class Citations(commands.Cog):
         amt = parse_amount(amount)
         await ensure_user(gid, user.id)
         days = due_days or c["citation_days"]
-        _, cid = await ex("INSERT INTO citations (guild_id,dept_id,user_id,issuer_id,amount,reason,due_at) "
-                          "VALUES (%s,%s,%s,%s,%s,%s,UTC_TIMESTAMP() + INTERVAL %s DAY)",
-                          gid, o["id"], user.id, inter.user.id, amt, reason, days)
+        _, cid = await ex("INSERT INTO citations (guild_id,dept_id,user_id,character_name,issuer_id,amount,reason,due_at) "
+                          "VALUES (%s,%s,%s,%s,%s,%s,%s,UTC_TIMESTAMP() + INTERVAL %s DAY)",
+                          gid, o["id"], user.id, character, inter.user.id, amt, reason, days)
         r = await get_cit(gid, cid)
         e = cit_embed(c, r)
         await reply(inter, content=user.mention, embed=e)
         await log(inter.client, gid, e)
         await dm(self.bot, user.id, emb(f"🚨 You received a citation in {inter.guild.name}",
-                 f"**{money(c, amt)}** — {reason}\nDue {ts(r['due_at'])}. Pay with `/citation pay {cid}`.", RED), gid)
+                 f"**Character:** {character}\n**Reason:** {reason}\n**Fine:** {money(c, amt)}\nDue {ts(r['due_at'])}. Pay with `/citation pay {cid}`.", RED), gid)
 
     @citation.command(name="pay", description="Pay a citation (yours or someone else's)")
     @app_commands.autocomplete(id=cit_ac)
@@ -136,7 +145,7 @@ class Citations(commands.Cog):
         rows = await q(f"SELECT * FROM citations WHERE guild_id=%s AND user_id=%s{cond} ORDER BY id DESC LIMIT 25", *args)
         icon = {"unpaid": "🔴", "paid": "🟢", "void": "⚪"}
         now = dt.datetime.utcnow()
-        lines = [f"{icon[r['status']]} `#{r['id']}` **{money(c, r['amount'] + r['late_fee'])}** — {r['reason'][:60]}"
+        lines = [f"{icon[r['status']]} `#{r['id']}` **{money(c, r['amount'] + r['late_fee'])}** — {r['character_name'] or '?'} · {r['reason'][:60]}"
                  + (" · **OVERDUE**" if r["status"] == "unpaid" and r["due_at"] < now else
                     (f" · due {ts(r['due_at'])}" if r["status"] == "unpaid" else "")) for r in rows]
         owed = sum(r["amount"] + r["late_fee"] for r in rows if r["status"] == "unpaid")
@@ -155,7 +164,8 @@ class Citations(commands.Cog):
     @citation.command(name="edit", description="Edit a citation (department head)")
     @app_commands.autocomplete(id=cit_ac)
     async def edit(self, inter: discord.Interaction, id: int, amount: str | None = None,
-                   reason: app_commands.Range[str, 3, 500] | None = None, extend_days: app_commands.Range[int, 1, 365] | None = None,
+                   reason: app_commands.Range[str, 5, 500] | None = None, character: app_commands.Range[str, 3, 100] | None = None,
+                   extend_days: app_commands.Range[int, 1, 365] | None = None,
                    note: app_commands.Range[str, 0, 300] | None = None):
         gid = inter.guild_id
         r = await get_cit(gid, id)
@@ -164,6 +174,11 @@ class Citations(commands.Cog):
             raise EconError("Only unpaid citations can be edited.")
         if amount: await ex("UPDATE citations SET amount=%s WHERE id=%s", parse_amount(amount), id)
         if reason: await ex("UPDATE citations SET reason=%s WHERE id=%s", reason, id)
+        if character:
+            character = " ".join(character.split())
+            if len(character.split()) < 2:
+                raise EconError("Enter the character's **full name** (first and last).")
+            await ex("UPDATE citations SET character_name=%s WHERE id=%s", character, id)
         if extend_days: await ex("UPDATE citations SET due_at=GREATEST(due_at, UTC_TIMESTAMP()) + INTERVAL %s DAY WHERE id=%s", extend_days, id)
         if note is not None: await ex("UPDATE citations SET note=%s WHERE id=%s", note, id)
         c = await cfg(gid)
