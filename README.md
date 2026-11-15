@@ -2,6 +2,8 @@
 
 A Discord roleplay economy (banking, businesses, departments, payroll, citations, shops, items) with a web panel that uses Discord login, plus optional SnailyCAD integration.
 
+**Developers:** see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for how the code is laid out and how to change, test, release and run it.
+
 ## Install (one line)
 
 ```bash
