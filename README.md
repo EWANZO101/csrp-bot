@@ -13,6 +13,9 @@ curl -fsSL https://raw.githubusercontent.com/EWANZO101/csrp-bot/main/install.sh 
 This installs Docker if needed, downloads the bot to `/opt/csrp-bot`, starts it with its own database and prints the panel address. Open that address and paste your bot token. **Running the same line again updates the bot** and keeps all your data.
 
 ### Moving to another VPS (keeping everything)
+**Easiest:** run the one-line install on the new server, open the panel, and in the setup wizard open **♻️ Moving from another server? Restore a backup**. Upload `csrp-backup.tar.gz` (or a `.sql` / `.sql.gz` backup from the panel) and enter the **setup code** printed at the end of the install. Tick *Also restore the bot connection* to skip the token and server steps. Stop the bot on the old server first.
+
+Or from the command line:
 1. On the old server: `bash backup.sh`. This creates `csrp-backup.tar.gz` (database and panel settings).
 2. Copy that file to the new server and run the one-line install **from the same folder**. The backup is restored automatically. Then in the Discord Developer Portal → your app → OAuth2 → Redirects, add the new panel address followed by `/callback` (for example `https://bot.snailyapp.com/callback`). Discord doesn't let bots add this themselves.
 

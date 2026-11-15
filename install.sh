@@ -72,7 +72,7 @@ server {
     listen 80 $DEF;
     listen [::]:80 $DEF;
     server_name $DOMAIN $IP _;
-    client_max_body_size 12m;
+    client_max_body_size 1024m;
     location / {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_http_version 1.1;
@@ -81,11 +81,15 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_read_timeout 90s;
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
     }
 }
 NGINX
 fi
+# older installs: allow big backup uploads / long restores through nginx (DB restore in the setup wizard + panel)
+sed -i -e 's/client_max_body_size [0-9]*[mMkK]*;/client_max_body_size 1024m;/' \
+       -e 's/proxy_read_timeout 90s;/proxy_read_timeout 900s;/' /etc/nginx/sites-available/csrp-bot
 ln -sf /etc/nginx/sites-available/csrp-bot /etc/nginx/sites-enabled/csrp-bot
 nginx -t >/dev/null 2>&1 && systemctl reload nginx || { echo "nginx config test failed:"; nginx -t; }
 
@@ -123,5 +127,9 @@ if [ -f data/settings.json ] && grep -q '"token"' data/settings.json; then
   echo "  under Discord Developer Portal → OAuth2 → Redirects, then open the panel and log in."
 else
   echo "  Open it in your browser and paste your bot token to finish setup."
+  echo "  Moving from another server? In the setup wizard open 'Restore a backup' and upload"
+  echo "  csrp-backup.tar.gz (from backup.sh) or a .sql/.sql.gz database backup."
 fi
+for _ in $(seq 1 30); do [ -s data/setup-code.txt ] && break; sleep 1; done
+[ -s data/setup-code.txt ] && echo "  Setup code: $(cat data/setup-code.txt)   (needed to restore a backup in the wizard)"
 echo "  Logs:    cd $DIR && docker compose logs -f bot"
