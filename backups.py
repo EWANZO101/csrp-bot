@@ -139,8 +139,10 @@ async def restore_backup(name) -> dict:
         return safety
 
 
-async def import_upload(field) -> dict:
-    """Save an uploaded .sql / .sql.gz / backup.sh .tar.gz as an 'uploaded' backup (not restored yet)."""
+async def import_upload(field, data_out: dict | None = None) -> dict:
+    """Save an uploaded .sql / .sql.gz / backup.sh .tar.gz as an 'uploaded' backup (not restored yet).
+    If `data_out` is a dict and the upload is a csrp-backup.tar.gz, the archive's data/settings.json is put in
+    data_out["settings"] (parsed) and data/brand/* files in data_out["brand"] ({filename: bytes})."""
     os.makedirs(DIR, exist_ok=True)
     fname = (field.filename or "").lower()
     tmpdir = tempfile.mkdtemp(dir=os.path.dirname(DIR))
@@ -166,6 +168,8 @@ async def import_upload(field) -> dict:
                 src = t.extractfile(member)
                 with gzip.open(sql_gz, "wb") as out:
                     shutil.copyfileobj(src, out, 1 << 20)
+                if data_out is not None:
+                    _read_bundle_data(t, data_out)
         elif is_gz:
             shutil.move(raw, sql_gz)
         else:
@@ -182,6 +186,26 @@ async def import_upload(field) -> dict:
         return next(b for b in list_backups() if b["name"] == name)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _read_bundle_data(t: tarfile.TarFile, out: dict):
+    """Pull data/settings.json and data/brand/* out of a backup.sh archive (read in memory, never extracted to disk
+    by path, so names like ../../x can't escape)."""
+    for m in t.getmembers():
+        if not m.isfile() or m.size > 20 * 1024 * 1024:
+            continue
+        parts = [p for p in m.name.replace("\\", "/").split("/") if p not in ("", ".")]
+        if ".." in parts or len(parts) < 2 or parts[0] != "data":
+            continue
+        if parts[1:] == ["settings.json"]:
+            try:
+                s = json.loads(t.extractfile(m).read().decode("utf-8"))
+                if isinstance(s, dict):
+                    out["settings"] = s
+            except (ValueError, UnicodeDecodeError):
+                logger.warning("backup archive has an unreadable data/settings.json — skipped")
+        elif len(parts) == 3 and parts[1] == "brand" and re.fullmatch(r"[A-Za-z0-9._-]{1,80}", parts[2]):
+            out.setdefault("brand", {})[parts[2]] = t.extractfile(m).read()
 
 
 # ───────── daily schedule ─────────

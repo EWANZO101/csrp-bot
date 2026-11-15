@@ -78,8 +78,41 @@ function renderSetup(st){
    <p class="mute" style="margin:0 0 14px">Open the <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord Developer Portal</a> → <b>New Application</b> → <b>Bot</b> tab → <b>Reset Token</b> → copy it.</p>
    ${st.can_edit?"":`<label class="l">Setup code <span class="dim">— shown when you installed the bot (also in <code>data/setup-code.txt</code>)</span></label><input class="in" id="sc" autocomplete="off" style="text-transform:uppercase;letter-spacing:.15em;max-width:220px">`}
    <label class="l">Bot token</label><input class="in" id="stk" type="password" autocomplete="off" placeholder="MTIz…">
-   <div style="margin-top:20px;display:flex;justify-content:flex-end"><button class="btn" id="sbtn" onclick="setupToken()">Continue →</button></div>`);
+   <div style="margin-top:20px;display:flex;justify-content:flex-end"><button class="btn" id="sbtn" onclick="setupToken()">Continue →</button></div>
+   <details style="margin-top:22px;border-top:1px solid var(--line,rgba(255,255,255,.08));padding-top:16px"${SETUP.restore_open?" open":""}>
+    <summary style="cursor:pointer;font-weight:600">♻️ Moving from another server? Restore a backup</summary>
+    <p class="mute" style="margin:10px 0">Upload a <code>csrp-backup.tar.gz</code> (made by <code>bash backup.sh</code>), or a <code>.sql</code> / <code>.sql.gz</code> database backup from the panel. This <b>replaces</b> the database on this server.</p>
+    <label class="l">Setup code <span class="dim">— printed at the end of the install (also in <code>data/setup-code.txt</code>)</span></label>
+    <input class="in" id="rsc" autocomplete="off" style="text-transform:uppercase;letter-spacing:.15em;max-width:220px">
+    <label class="l">Backup file</label><input class="in" id="rfile" type="file" accept=".sql,.gz,.tgz,application/gzip,application/sql">
+    <label class="chk" style="margin-top:10px"><input type="checkbox" id="rset" checked><span>Also restore the bot connection, channels and branding<small>Only for <code>csrp-backup.tar.gz</code>. Skips the token and server steps.</small></span></label>
+    <div style="margin-top:14px;display:flex;justify-content:flex-end"><button class="btn ghost" id="rbtn" onclick="setupRestore()">Restore backup</button></div>
+   </details>`);
   ($("#sc")||$("#stk")).focus(); $("#stk").onkeydown=e=>{ if(e.key==="Enter") setupToken(); };
+}
+async function setupRestore(){
+  const f=$("#rfile").files[0], code=($("#rsc").value||"").trim();
+  if(!code) return toast("Enter the setup code.",false);
+  if(!f) return toast("Choose a backup file.",false);
+  if(!confirm("Replace the database on this server with "+f.name+"?")) return;
+  const btn=$("#rbtn"); btn.disabled=true; btn.textContent="Uploading & restoring… (don't close this page)";
+  const fd=new FormData(); fd.append("file",f);
+  let j={};
+  try{
+    const r=await fetch("/api/setup/restore"+($("#rset").checked?"?settings=1":""),{method:"POST",headers:{"X-Panel":"1","X-Setup-Code":code},body:fd});
+    try{ j=await r.json(); }catch(e){}
+    if(!r.ok) throw new Error(j.error||(r.status===413?"File too large for the web server (nginx client_max_body_size).":`HTTP ${r.status}`));
+  }catch(e){ toast(e.message,false); btn.disabled=false; btn.textContent="Restore backup"; return; }
+  if(j.restored_settings && j.configured){
+    $("#app").innerHTML = wizShell(3, `<div style="text-align:center;padding:10px 0"><div style="font-size:46px">♻️</div><h2 style="margin:8px 0">Backup restored</h2>
+     <p class="mute">Your data and bot settings are back${j.bot_name?` (<b>${esc(j.bot_name)}</b>)`:""}. The bot is starting.</p>
+     <p class="mute" style="text-align:left">Last step: in the <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Developer Portal</a> → your app → <b>OAuth2 → Redirects</b>, add:<br><code style="user-select:all">${esc(j.redirect_uri)}</code></p>
+     <p class="mute" style="font-size:13px">Make sure the bot on your old server is stopped — the same token can't run in two places.</p>
+     <a class="btn discord-btn" href="/login" style="margin-top:12px">Login with Discord</a></div>`);
+    return;
+  }
+  toast(j.had_settings&&!j.restored_settings?"Database restored. Bot settings were skipped — paste your bot token to continue.":"Database restored — now paste your bot token to continue.");
+  btn.disabled=false; btn.textContent="Restore backup"; $("#stk").focus();
 }
 async function setupToken(){
   $("#sbtn").disabled=true;

@@ -63,6 +63,7 @@ class Panel:
         r.add_get("/api/setup/guilds", self.api_setup_guilds)
         r.add_get("/api/setup/redirect", self.api_setup_check_redirect)
         r.add_post("/api/setup/finish", self.api_setup_finish)
+        r.add_post("/api/setup/restore", self.api_setup_restore)
         r.add_get("/api/me", self.api_me)
         r.add_get("/api/my", self.api_my)
         r.add_post("/api/my/move", self.api_my_move)
@@ -941,6 +942,47 @@ fetch('/api/oauth',{method:'POST',headers:{'Content-Type':'application/json','X-
         self.state.save()
         await self.state.start_bot()
         return web.json_response({"ok": True})
+
+    async def api_setup_restore(self, request):
+        """Setup wizard: restore a database backup (.sql / .sql.gz / csrp-backup.tar.gz) right after installing.
+        Always needs the setup code (or a logged-in owner) — even on first run, because it replaces the database.
+        ?settings=1 also restores the bot connection + channels from a csrp-backup.tar.gz (data/settings.json, brand)."""
+        import backups
+        code = request.headers.get("X-Setup-Code") or ""
+        if not ((code and hmac.compare_digest(code.strip().upper(), self.state.setup_code)) or self.owner_session(request)):
+            raise EconError("Wrong setup code — it was printed when you installed (also in data/setup-code.txt).")
+        reader = await request.multipart()
+        field = await reader.next()
+        if not field or field.name != "file":
+            raise EconError("Choose a backup file.")
+        bundle: dict = {}
+        b = await backups.import_upload(field, data_out=bundle)
+        await self.state.stop_bot()          # nothing writes to the DB while it's replaced
+        safety = await backups.restore_backup(b["name"])
+        restored_settings = False
+        if request.query.get("settings") == "1" and bundle.get("settings"):
+            old = self.state.settings
+            new = dict(bundle["settings"])
+            new["web_secret"] = old.get("web_secret") or new.get("web_secret")   # keep current logins valid
+            env_url = (os.getenv("PUBLIC_URL") or "").strip().rstrip("/")
+            new["public_url"] = env_url or old.get("public_url") or ""          # this server's address, not the old one
+            new.pop("seen_url", None)
+            self.state.settings = new
+            self.state.save()
+            core.BOT_OWNERS.update(int(x) for x in new.get("owner_ids", []) if str(x).isdigit())
+            brand_dir = os.path.join(os.getenv("DATA_DIR", os.path.join(os.path.dirname(__file__), "data")), "brand")
+            for fname, data in (bundle.get("brand") or {}).items():
+                os.makedirs(brand_dir, exist_ok=True)
+                with open(os.path.join(brand_dir, fname), "wb") as f:
+                    f.write(data)
+            restored_settings = True
+        core._cfg_cache.clear()
+        if self.state.configured:
+            await self.state.start_bot()
+        print(f"[web] setup restore: database from {b['name']} (pre-restore {safety['name']}), settings={restored_settings}")
+        return web.json_response({"ok": True, "restored_settings": restored_settings, "configured": self.state.configured,
+                                  "had_settings": bool(bundle.get("settings")), "pre_restore": safety["name"],
+                                  "redirect_uri": self.redirect_uri(request), "bot_name": self.state.settings.get("bot_name")})
 
     async def api_setup(self, request):
         """Advanced: change token/server/owners in one go (Settings → Bot connection)."""

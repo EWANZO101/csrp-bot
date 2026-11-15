@@ -347,6 +347,7 @@ All commands run in the install folder (default `/opt/csrp-bot`):
 | Manual DB dump | `docker compose exec -T db sh -c 'mariadb-dump -ueconomybot -p"$MARIADB_PASSWORD" --single-transaction economybot' > dump.sql` |
 | Restore a panel backup by hand | `gunzip -c data/backups/db/FILE.sql.gz \| docker compose exec -T db sh -c 'mariadb -ueconomybot -p"$MARIADB_PASSWORD" economybot'` |
 | Move to a new server | `bash backup.sh` → copy `csrp-backup.tar.gz` → run the installer from the same folder on the new server |
+| Move via the browser | fresh install → setup wizard → **Restore a backup** (upload `csrp-backup.tar.gz` / `.sql(.gz)` + setup code). Endpoint: `POST /api/setup/restore` (`X-Setup-Code` header, `?settings=1` also restores `data/settings.json` + brand; keeps this server's `web_secret`/`PUBLIC_URL`). |
 | Reset setup (connect another bot) | stop bot, delete `data/settings.json`, start bot |
 
 Backups: the panel makes a daily dump at 04:00 UTC into `data/backups/db/` (kept: 14 auto, 20 manual, 10 pre-restore/uploaded/hub)
