@@ -97,6 +97,17 @@ class AppState:
                 self.status, self.error = "error", "Discord refused the gateway intents."
             except discord.LoginFailure:
                 self.status, self.error = "error", "Discord rejected the bot token."
+            except discord.ConnectionClosed as e:
+                await bot.close()
+                if e.code == 4004:
+                    self.status, self.error = "error", (
+                        "Discord rejected the bot token (it was reset or revoked). Copy a new token from "
+                        "Developer Portal → Bot → Reset Token and paste it in the panel.")
+                elif e.code == 4014:
+                    self.status, self.error = "error", "Discord refused the gateway intents."
+                else:
+                    log.exception("bot crashed")
+                    self.status, self.error = "error", f"Discord closed the connection (code {e.code})."
             except asyncio.CancelledError:
                 raise
             except Exception as e:

@@ -8,6 +8,7 @@ from core import (EconError, q, q1, ex, cfg, set_cfg, coerce_cfg, DEFAULTS, mone
                   ensure_user, get_user, find_org, require_admin, is_creator, log, dm, reply, confirm,
                   MINT, BURN, GREEN, RED, BLUE, GOLD)
 from cogs.payroll import any_org_ac, run_payroll
+from cogs.orgs import move_user_items
 
 SETTING_HELP = {
     "currency": "Currency symbol (e.g. $, R, £)",
@@ -103,6 +104,43 @@ class Admin(commands.Cog):
         e = emb("🧹 Account wiped", f"{user.mention} wiped by {inter.user.mention} ({len(biz)} businesses removed)", RED)
         await log(self.bot, gid, e)
         await inter.followup.send(embed=e, ephemeral=True)
+
+    async def _from_inv_ac(self, inter: discord.Interaction, current: str):
+        src = getattr(inter.namespace, "from_user", None)
+        if not src:
+            return []
+        rows = await q("SELECT name, qty FROM user_items WHERE guild_id=%s AND user_id=%s AND qty>0 AND name LIKE %s "
+                       "ORDER BY name LIMIT 25", inter.guild_id, src.id, f"%{current}%")
+        return [app_commands.Choice(name=f"{r['name']} (×{r['qty']})"[:100], value=r["name"]) for r in rows]
+
+    @admin.command(name="move_items", description="Move items (one item or the whole inventory) from one player to another")
+    @app_commands.describe(from_user="Player to take items from", to_user="Player to give them to",
+                           item="One item to move — leave empty to move EVERYTHING",
+                           quantity="How many of that item — leave empty for all of it")
+    async def move_items(self, inter: discord.Interaction, from_user: discord.Member, to_user: discord.Member,
+                         item: str | None = None, quantity: app_commands.Range[int, 1, 1000000] | None = None):
+        await require_admin(inter, "economy")
+        if from_user.id == to_user.id or to_user.bot:
+            raise EconError("Pick two different (human) players.")
+        gid = inter.guild_id
+        if item is None:
+            n = await q1("SELECT COUNT(*) n FROM user_items WHERE guild_id=%s AND user_id=%s AND qty>0", gid, from_user.id)
+            if not n["n"]:
+                raise EconError(f"{from_user.mention} has no items.")
+            if not await confirm(inter, f"Move **all {n['n']} item types** from {from_user.mention} to {to_user.mention}?", "Move"):
+                return
+        moved = await move_user_items(gid, from_user.id, to_user.id, inter.user.id, item, quantity)
+        e = emb("📦 Items moved", f"{inter.user.mention} moved from {from_user.mention} → {to_user.mention}:\n"
+                + "\n".join(f"• {m}" for m in moved)[:3800], GOLD)
+        await log(self.bot, gid, e)
+        if item is None:
+            await inter.followup.send(embed=e, ephemeral=True)
+        else:
+            await reply(inter, embed=e)
+
+    @move_items.autocomplete("item")
+    async def _move_items_item_ac(self, inter: discord.Interaction, current: str):
+        return await self._from_inv_ac(inter, current)
 
     @admin.command(name="freeze", description="Freeze/unfreeze a user's account (blocks spending)")
     async def freeze(self, inter: discord.Interaction, user: discord.Member, frozen: bool = True):
@@ -296,7 +334,7 @@ HELP = {
     "🎫 Tickets": "Open one from the ticket panel · `/ticket close|add|remove|rename|panel`",
     "📚 Documents": "`/docs` — SOPs, penal codes and links (also on the web panel)",
     "📝 Applications": "`/apply` — see requirements and apply on the web panel",
-    "⚙️ Admin": "`/admin print|remove|wipe|freeze|undo|audit|stats|settings|config|set_log|staff`",
+    "⚙️ Admin": "`/admin print|remove|move_items|wipe|freeze|undo|audit|stats|settings|config|set_log|staff`",
 }
 
 

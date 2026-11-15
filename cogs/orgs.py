@@ -67,6 +67,33 @@ async def give_user_item(cur, gid, uid, it, qty, source):
          source, qty))
 
 
+async def move_user_items(gid, src_uid, dst_uid, actor_id, item=None, quantity=None) -> list[str]:
+    """Move one item (optionally `quantity` of it) or, with item=None, the whole inventory from src to dst."""
+    if src_uid == dst_uid:
+        raise EconError("Pick two different players.")
+    await ensure_user(gid, dst_uid)
+    moved = []
+
+    async def extra(cur):
+        if item is None:
+            await cur.execute("SELECT * FROM user_items WHERE guild_id=%s AND user_id=%s AND qty>0 FOR UPDATE", (gid, src_uid))
+        else:
+            await cur.execute("SELECT * FROM user_items WHERE guild_id=%s AND user_id=%s AND name=%s AND qty>0 FOR UPDATE",
+                              (gid, src_uid, item))
+        rows = await cur.fetchall()
+        if not rows:
+            raise EconError("That player has no items." if item is None else f"That player doesn't have **{item}**.")
+        for it in rows:
+            qty = it["qty"] if item is None or not quantity else int(quantity)
+            if qty < 1 or qty > it["qty"]:
+                raise EconError(f"That player only has {it['qty']}× **{it['name']}**.")
+            await cur.execute("UPDATE user_items SET qty=qty-%s WHERE id=%s", (qty, it["id"]))
+            await give_user_item(cur, gid, dst_uid, it, qty, it["source"])
+            moved.append(f"{qty}× {it['name']}")
+    await transfer(gid, [], actor_id, "admin_move_items", extra=extra)
+    return moved
+
+
 async def take_stock(cur, item_id, qty):
     await cur.execute("SELECT stock FROM org_items WHERE id=%s FOR UPDATE", (item_id,))
     row = await cur.fetchone()

@@ -77,6 +77,7 @@ class Panel:
         r.add_post("/api/settings", self.api_settings_save)
         r.add_post("/api/admin/money", self.api_money)
         r.add_post("/api/admin/freeze", self.api_freeze)
+        r.add_post("/api/admin/move_items", self.api_move_items)
         r.add_post("/api/admin/undo", self.api_undo)
         r.add_post("/api/admin/citation", self.api_citation_action)
         r.add_post("/api/admin/org", self.api_org_create)
@@ -601,6 +602,21 @@ fetch('/api/oauth',{method:'POST',headers:{'Content-Type':'application/json','X-
         await ex("UPDATE users SET frozen=%s WHERE guild_id=%s AND user_id=%s", bool(b.get("frozen")), self.gid, uid)
         await core.log(self.bot, self.gid, core.emb("🧊 Freeze (web)", f"<@{uid}> frozen={bool(b.get('frozen'))} by <@{m.id}>", core.GOLD))
         return web.json_response({"ok": True})
+
+    async def api_move_items(self, request):
+        m, adm, c = await self.session(request, perm="economy")
+        b = await self.body(request)
+        src, dst = str(b.get("from") or "").strip(), str(b.get("to") or "").strip()
+        if not (src.isdigit() and dst.isdigit()):
+            raise EconError("Pick who to move the items to (a citizen or a Discord user ID).")
+        from cogs.orgs import move_user_items
+        qty = str(b.get("qty") or "").strip()
+        if qty and not qty.isdigit():
+            raise EconError("Quantity must be a whole number.")
+        moved = await move_user_items(self.gid, int(src), int(dst), m.id, b.get("item") or None, int(qty) if qty else None)
+        await core.log(self.bot, self.gid, core.emb("📦 Items moved (web)", f"<@{m.id}> moved from <@{src}> → <@{dst}>:\n"
+                       + "\n".join(f"• {x}" for x in moved)[:3800], core.GOLD))
+        return web.json_response({"ok": True, "moved": moved})
 
     async def api_undo(self, request):
         m, adm, c = await self.session(request, perm="economy")

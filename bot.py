@@ -9,7 +9,7 @@ from core import EconError, emb, RED
 
 log = logging.getLogger("economy")
 
-EXTENSIONS = ["cogs.bank", "cogs.orgs", "cogs.items", "cogs.payroll", "cogs.citations", "cogs.admin"]
+EXTENSIONS = ["cogs.bank", "cogs.orgs", "cogs.items", "cogs.payroll", "cogs.citations", "cogs.admin", "cogs.importer", "cogs.staffpanel", "cogs.directory", "cogs.hospital", "cogs.activity", "cogs.scheduler", "cogs.utilities"]
 OPTIONAL = {"tickets": "cogs.tickets", "documents": "cogs.documents", "applications": "cogs.applications", "cad": "cogs.cad"}
 
 
@@ -17,6 +17,7 @@ class EconomyBot(commands.Bot):
     def __init__(self, state, members=True):
         intents = discord.Intents.default()
         intents.members = members
+        intents.message_content = members  # needed to read the old bot's embeds in the import channel
         super().__init__(command_prefix=commands.when_mentioned, intents=intents, help_command=None)
         self.state = state
 

@@ -292,11 +292,29 @@ async function userModal(uid){
   <div class="card" style="margin-top:16px"><div class="card-h"><h3>Adjust money</h3></div><div class="row"><div><label class="l">Amount</label><input class="in" id="am" placeholder="1000, 5k"></div><div><label class="l">Account</label><select class="in" id="ai"><option value="bank">Bank</option><option value="wallet">Wallet</option></select></div><div style="flex:2"><label class="l">Reason</label><input class="in" id="ar" placeholder="optional"></div></div>
    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn green" onclick="adj('${uid}','print')">Print money</button><button class="btn red" onclick="adj('${uid}','remove')">Remove money</button><button class="btn ghost" onclick="frz('${uid}',${!d.frozen})">${d.frozen?"Unfreeze":"Freeze"} account</button></div></div>
   ${d.businesses.length?`<div class="card"><div class="card-h"><h3>Owns</h3></div>${d.businesses.map(b=>`<div>🏢 <b>${esc(b.name)}</b> — ${fmt(b.balance)}</div>`).join("")}</div>`:""}
-  <div class="card"><div class="card-h"><h3>Inventory</h3></div>${d.items.map(i=>`<span class="pill" style="margin:2px">${esc(i.name)} ×${i.qty}</span>`).join("")||'<span class="dim">Empty</span>'}</div>
+  <div class="card"><div class="card-h"><h3>Inventory</h3></div>${d.items.map(i=>`<span class="pill" style="margin:2px">${esc(i.name)} ×${i.qty}</span>`).join("")||'<span class="dim">Empty</span>'}
+   ${d.items.length?`<div style="margin-top:14px;border-top:1px solid rgba(127,127,127,.2);padding-top:12px"><b>Move items to another player</b>
+    <div class="row" style="margin-top:8px"><div style="flex:2"><label class="l">Item</label><select class="in" id="mvi"><option value="">— All items (whole inventory) —</option>${d.items.map(i=>`<option value="${esc(i.name)}">${esc(i.name)} (×${i.qty})</option>`).join("")}</select></div>
+    <div><label class="l">Quantity</label><input class="in" id="mvq" placeholder="all" inputmode="numeric"></div></div>
+    <div class="row"><div style="flex:2"><label class="l">Give to</label><select class="in" id="mvt"><option value="">Loading citizens…</option></select></div>
+    <div style="flex:2"><label class="l">…or Discord user ID</label><input class="in" id="mvid" placeholder="123456789012345678" inputmode="numeric"></div></div>
+    <div style="margin-top:12px"><button class="btn" onclick="mvItems('${uid}')">Move items</button></div></div>`:""}</div>
   <div class="card"><div class="card-h"><h3>Citations</h3></div>${citTable(d.citations,{admin:true})}</div>
   <div class="card"><div class="card-h"><h3>History</h3></div>${ledgerTable(d.history,uid,true)}</div>`, true);
+  mvFill(uid);
 }
 async function adj(uid,op){ const amount=$("#am").value.trim(); if(!amount) return toast("Enter an amount",false); if(await act(()=>api("/api/admin/money",{op,user:uid,amount,into:$("#ai").value,reason:$("#ar").value}),op==="print"?"Money printed":"Money removed")) userModal(uid); }
+async function mvFill(uid){ const sel=$("#mvt"); if(!sel) return; try{ const rows=await api("/api/users?q=");
+  sel.innerHTML=`<option value="">— pick a citizen —</option>`+rows.filter(r=>r.user.id!==uid).map(r=>`<option value="${r.user.id}">${esc(r.user.name)} (@${esc(r.user.username)})</option>`).join(""); }catch(e){ sel.innerHTML=`<option value="">— couldn't load —</option>`; } }
+async function mvItems(uid){
+  const to=($("#mvid").value.trim()||$("#mvt").value), item=$("#mvi").value, qty=$("#mvq").value.trim();
+  if(!to) return toast("Pick who gets the items",false);
+  if(!/^\d{15,21}$/.test(to)) return toast("That's not a Discord user ID",false);
+  const who=$("#mvid").value.trim()?to:$("#mvt").selectedOptions[0].text;
+  if(!confirm(item?`Move ${qty||"all"} × ${item} to ${who}?`:`Move the WHOLE inventory to ${who}?`)) return;
+  const r=await act(()=>api("/api/admin/move_items",{from:uid,to,item,qty}));
+  if(r){ toast("Moved: "+r.moved.join(", ")); userModal(uid); }
+}
 async function frz(uid,frozen){ if(await act(()=>api("/api/admin/freeze",{user:uid,frozen}),frozen?"Frozen":"Unfrozen")) userModal(uid); }
 async function undo(id){ if(!confirm(`Reverse transaction #${id}?`)) return; let ok=await act(()=>api("/api/admin/undo",{id}),"Reversed");
   if(!ok&&confirm("Reversal failed (probably not enough money left). Force it and allow a negative balance?")) ok=await act(()=>api("/api/admin/undo",{id,force:true}),"Reversed (forced)"); if(ok){ closeModal(); render(); } }
